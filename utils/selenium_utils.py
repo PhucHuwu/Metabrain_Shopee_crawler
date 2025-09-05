@@ -9,6 +9,7 @@ import logging
 import time
 import json
 import os
+import threading
 from typing import List, Optional, Dict
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -22,207 +23,63 @@ from selenium.common.exceptions import (
 
 logger = logging.getLogger(__name__)
 
-
-def setup_robust_driver(profile_idx: int = 0, config: Dict = None):
-    """
-    Cấu hình driver với undetected-chromedriver ONLY (theo yêu cầu)
-    """
-    logger.info(f"Khởi tạo UNDETECTED ChromeDriver cho profile {profile_idx}")
-    
-    # Chỉ sử dụng undetected ChromeDriver - không có fallback
-    logger.info("Sử dụng UNDETECTED ChromeDriver (bắt buộc)...")
-    driver = try_undetected_chrome_robust(profile_idx, config)
-    
-    if driver:
-        logger.info("UNDETECTED ChromeDriver khởi tạo thành công!")
-        return driver
-    
-    logger.error("Không thể khởi tạo UNDETECTED ChromeDriver")
-    logger.error("Gợi ý: Kiểm tra Chrome version và undetected-chromedriver version")
-    return None
+# Thread-safe driver lock
+driver_lock = threading.Lock()
 
 
-def try_undetected_chrome_robust(profile_idx: int = 0, config: Dict = None):
+def create_driver_with_lock(profile_idx: int = 0, config: Dict = None):
     """
-    Khởi tạo undetected ChromeDriver với nhiều phương pháp robust
-    """
-    logger.info("Chuẩn bị UNDETECTED Chrome với cấu hình tối ưu...")
-    
-    # Phương pháp 1: Cấu hình đơn giản nhất
-    driver = try_simple_undetected_chrome(profile_idx, config)
-    if driver:
-        logger.info("Phương pháp 1 (đơn giản) thành công!")
-        return driver
-    
-    # Phương pháp 2: Cấu hình với profile directory
-    driver = try_profile_undetected_chrome(profile_idx, config)
-    if driver:
-        logger.info("Phương pháp 2 (với profile) thành công!")
-        return driver
-    
-    # Phương pháp 3: Cấu hình với auto version detection
-    driver = try_auto_version_undetected_chrome(profile_idx, config)
-    if driver:
-        logger.info("Phương pháp 3 (auto version) thành công!")
-        return driver
-    
-    logger.error("Tất cả phương pháp undetected Chrome đều thất bại")
-    return None
-
-
-def try_simple_undetected_chrome(profile_idx: int = 0, config: Dict = None):
-    """
-    Phương pháp 1: Undetected Chrome đơn giản nhất
+    Tạo driver thread-safe với profile directory - PHƯƠNG PHÁP DUY NHẤT
     """
     try:
-        logger.info("Thử undetected Chrome với cấu hình tối thiểu...")
-        
-        # Tạo options đơn giản nhất
-        options = uc.ChromeOptions()
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        
-        # Kiểm tra headless mode
-        if config and config.get('HEADLESS', False):
-            options.add_argument("--headless")
-            logger.info("Chế độ headless")
-        
-        # Khởi tạo với timeout
-        driver = create_uc_driver_with_timeout(options, timeout=20)
-        
-        if driver:
-            driver.set_page_load_timeout(30)
-            driver.implicitly_wait(10)
-            logger.info("Simple undetected Chrome thành công")
-            return driver
-            
-    except Exception as e:
-        logger.warning(f"Simple undetected Chrome thất bại: {e}")
-    
-    return None
+        logger.info(f"Khởi tạo driver thread-safe cho profile {profile_idx}")
 
-
-def try_profile_undetected_chrome(profile_idx: int = 0, config: Dict = None):
-    """
-    Phương pháp 2: Undetected Chrome với profile directory
-    """
-    try:
-        logger.info("Thử undetected Chrome với profile directory...")
-        
         # Tạo profile directory
         profile_directory = f"Profile_{profile_idx}"
         if not os.path.exists(profile_directory):
             os.makedirs(profile_directory)
-            logger.info(f"Đã tạo profile: {profile_directory}")
-        
+            logger.info(f"Đã tạo profile directory: {profile_directory}")
+
+        # Cấu hình options
         options = uc.ChromeOptions()
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
-        
-        # Thêm anti-detection options
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-extensions")
         options.add_argument("--no-first-run")
-        
+        options.add_argument("--disable-default-apps")
+
         if config and config.get('HEADLESS', False):
             options.add_argument("--headless")
-        
-        # Khởi tạo với user data dir
-        driver = uc.Chrome(
-            options=options,
-            user_data_dir=os.path.abspath(profile_directory)
-        )
-        
-        if driver:
-            driver.set_page_load_timeout(30)
-            driver.implicitly_wait(10)
-            logger.info("Profile undetected Chrome thành công")
-            return driver
-            
+            logger.info("Chế độ headless được bật")
+
+        # Khởi tạo driver với lock theo cấu trúc yêu cầu
+        with driver_lock:
+            options.user_data_dir = profile_directory
+            try:
+                driver = uc.Chrome(options=options)
+                logger.info(f"Đã khởi tạo Chrome driver với profile: {profile_directory}")
+
+                # Cấu hình timeout
+                driver.set_page_load_timeout(30)
+                driver.implicitly_wait(10)
+
+                return driver
+
+            except Exception as e:
+                logger.error(f"Lỗi khi khởi tạo Chrome driver profile {profile_idx}: {e}")
+                time.sleep(180)  # Chờ trước khi thử lại
+                return None
+
     except Exception as e:
-        logger.warning(f"Profile undetected Chrome thất bại: {e}")
-    
-    return None
-
-
-def try_auto_version_undetected_chrome(profile_idx: int = 0, config: Dict = None):
-    """
-    Phương pháp 3: Undetected Chrome với auto version detection
-    """
-    try:
-        logger.info("� Thử undetected Chrome với auto version detection...")
-        
-        options = uc.ChromeOptions()
-        
-        # Cấu hình options cơ bản
-        basic_options = [
-            "--no-sandbox",
-            "--disable-dev-shm-usage", 
-            "--disable-gpu",
-            "--disable-web-security",
-            "--disable-features=VizDisplayCompositor",
-            "--remote-debugging-port=0"
-        ]
-        
-        for opt in basic_options:
-            options.add_argument(opt)
-        
-        if config and config.get('HEADLESS', False):
-            options.add_argument("--headless")
-        
-        # Khởi tạo với version_main=None để auto detect
-        driver = uc.Chrome(
-            options=options,
-            version_main=None,
-            driver_executable_path=None
-        )
-        
-        if driver:
-            driver.set_page_load_timeout(30)
-            driver.implicitly_wait(10)
-            logger.info("Auto version undetected Chrome thành công")
-            return driver
-            
-    except Exception as e:
-        logger.warning(f"Auto version undetected Chrome thất bại: {e}")
-    
-    return None
-
-
-def create_uc_driver_with_timeout(options, timeout: int = 20):
-    """
-    Tạo undetected Chrome driver với timeout để tránh hang
-    """
-    import threading
-    
-    driver_result = [None]
-    exception_result = [None]
-    
-    def create_driver():
-        try:
-            driver = uc.Chrome(options=options)
-            driver_result[0] = driver
-            logger.debug("Driver thread tạo thành công")
-        except Exception as e:
-            exception_result[0] = e
-    
-    # Tạo thread với timeout
-    thread = threading.Thread(target=create_driver)
-    thread.daemon = True
-    thread.start()
-    thread.join(timeout=timeout)
-    
-    if thread.is_alive():
-        logger.warning(f"Timeout {timeout}s khi tạo driver")
+        logger.error(f"Lỗi tổng quát khi tạo driver: {e}")
         return None
-    
-    if exception_result[0]:
-        logger.warning(f"Exception trong thread: {exception_result[0]}")
-        return None
-    
-    return driver_result[0]
+
+
+# Alias cho backward compatibility
+setup_robust_driver = create_driver_with_lock
 
 
 def safe_click_element(driver, selectors: List[str], timeout: int = 10) -> bool:
@@ -376,3 +233,48 @@ def get_random_delay() -> float:
     """
     import random
     return random.uniform(1.0, 3.0)
+
+
+def worker_function(thread_idx: int, urls: List[str], config: Dict = None):
+    """
+    Hàm worker để sử dụng trong threading - CHỈ SỬ DỤNG profile_directory
+    """
+    driver = create_driver_with_lock(thread_idx, config)
+    if not driver:
+        logger.error(f"Không thể tạo driver cho thread {thread_idx}")
+        return
+
+    try:
+        # Load cookies nếu có
+        if load_cookies(driver, f"thread_{thread_idx}"):
+            logger.info(f"Đã load cookies cho thread {thread_idx}")
+
+        # Thực hiện crawling
+        for url in urls:
+            try:
+                logger.info(f"Thread {thread_idx} đang crawl: {url}")
+                # TODO: Thêm logic crawl URL cụ thể ở đây
+                driver.get(url)
+                wait_for_page_ready(driver)
+
+                # Random delay để tránh detection
+                delay = get_random_delay()
+                time.sleep(delay)
+
+            except Exception as url_error:
+                logger.error(f"Thread {thread_idx} lỗi khi crawl {url}: {url_error}")
+                continue
+
+        # Lưu cookies trước khi đóng
+        save_cookies(driver, f"thread_{thread_idx}")
+        logger.info(f"Đã lưu cookies cho thread {thread_idx}")
+
+    except Exception as e:
+        logger.error(f"Lỗi trong worker function thread {thread_idx}: {e}")
+    finally:
+        if driver:
+            try:
+                driver.quit()
+                logger.info(f"Đã đóng driver cho thread {thread_idx}")
+            except Exception as quit_error:
+                logger.warning(f"Lỗi khi đóng driver thread {thread_idx}: {quit_error}")
