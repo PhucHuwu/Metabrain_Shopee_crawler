@@ -20,6 +20,9 @@ from utils.selenium_utils import (
     save_cookies,
     load_cookies,
     handle_popup,
+    comprehensive_popup_handler,
+    wait_and_handle_popup,
+    smart_popup_detection,
     get_random_delay,
     driver_lock
 )
@@ -70,7 +73,7 @@ class ShopeeService:
                 logger.error("Driver chưa được khởi tạo")
                 return False
 
-            shopee_url = self.config.get('shopee', {}).get('BASE_URL', 'https://shopee.vn')
+            shopee_url = self.config.get('shopee', {}).get('BASE_URL', 'https://shopee.vn/mall')
             logger.info(f"Đang truy cập vào {shopee_url}")
 
             # Truy cập trang chủ Shopee với timeout
@@ -112,12 +115,22 @@ class ShopeeService:
                 else:
                     logger.info("Không có cookies để load hoặc load không thành công")
 
-            # Xử lý popup nếu có
-            logger.info("Đang kiểm tra popup...")
-            if handle_popup(self.driver):
-                logger.info("Đã đóng popup")
-            else:
-                logger.info("Không có popup nào")
+            # Xử lý popup nếu có - sử dụng phương pháp đơn giản và nhanh
+            logger.info("Đang kiểm tra và xử lý popup...")
+
+            try:
+                # Sử dụng comprehensive handler với timeout ngắn
+                popup_handled = comprehensive_popup_handler(self.driver, max_time=10)
+                if popup_handled:
+                    logger.info("✅ Đã xử lý popup thành công")
+                else:
+                    logger.info("ℹ️ Không có popup nào cần xử lý")
+
+            except Exception as popup_error:
+                logger.warning(f"Lỗi khi xử lý popup: {popup_error}")
+                logger.info("Tiếp tục mà không xử lý popup")
+
+            logger.info("Hoàn thành xử lý popup")
 
             # Delay ngẫu nhiên để tránh detection
             delay = get_random_delay()

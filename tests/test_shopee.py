@@ -35,69 +35,69 @@ def test_shopee_access():
         if not driver:
             logger.error("Không thể khởi tạo driver")
             return False
-        
+
         logger.info("Driver đã khởi tạo thành công")
-        
+
         # Test truy cập Shopee từng bước
         logger.info("Bước 1: Test kết nối cơ bản...")
         driver.set_page_load_timeout(15)
-        
+
         # Trước tiên truy cập Google để chắc chắn kết nối OK
         logger.info("Kiểm tra kết nối với Google...")
         driver.get("https://www.google.com")
         logger.info(f"Google title: {driver.title}")
-        
+
         time.sleep(2)
-        
+
         # Bây giờ thử Shopee
         logger.info("Bước 2: Truy cập Shopee...")
-        shopee_url = "https://shopee.vn"
-        
+        shopee_url = "https://shopee.vn/mall"
+
         try:
             driver.get(shopee_url)
             logger.info("Đã gửi request tới Shopee")
-            
+
             # Chờ trang load
             logger.info("Chờ trang Shopee load...")
             time.sleep(5)  # Chờ cứng trước
-            
+
             current_url = driver.current_url
             title = driver.title
-            
+
             logger.info(f"URL hiện tại: {current_url}")
             logger.info(f"Title: {title}")
-            
+
             # Kiểm tra xem có phải trang Shopee không
             if "shopee" in current_url.lower() or "shopee" in title.lower():
                 logger.info("Đã truy cập thành công vào Shopee!")
-                
+
                 # Thử lấy một số thông tin từ trang
                 try:
                     page_source_length = len(driver.page_source)
                     logger.info(f"Độ dài page source: {page_source_length} ký tự")
-                    
+
                     if page_source_length > 1000:
                         logger.info("Trang có nội dung phong phú")
                     else:
                         logger.warning("Trang có ít nội dung")
-                        
+
                 except Exception as e:
                     logger.warning(f"Không lấy được thông tin trang: {e}")
-                
+
                 return True
-                
+
             else:
                 logger.warning("Không rõ có phải trang Shopee hay không")
                 return False
-                
+
         except Exception as load_error:
             logger.error(f"Lỗi khi load trang Shopee: {load_error}")
             return False
-            
+
     except Exception as e:
         logger.error(f"Lỗi chung: {e}")
         return False
-        
+
     finally:
         # Đợi user xem kết quả
         if driver:

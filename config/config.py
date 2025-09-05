@@ -47,7 +47,7 @@ SELENIUM_CONFIG = {
 
 # ======================== SHOPEE CONFIG ========================
 SHOPEE_CONFIG = {
-    'BASE_URL': 'https://shopee.vn',
+    'BASE_URL': 'https://shopee.vn/mall',
     'SEARCH_ENDPOINT': '/search',
     'SHOP_ENDPOINT': '/shop',
     'MAX_PAGES_PER_SEARCH': 50,

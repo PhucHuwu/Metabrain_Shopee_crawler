@@ -13,6 +13,7 @@ import threading
 from typing import List, Optional, Dict
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
@@ -164,7 +165,7 @@ def load_cookies(driver, profile_name: str) -> bool:
             # Cần navigate tới domain trước khi add cookies
             current_url = driver.current_url
             if "shopee.vn" not in current_url.lower():
-                driver.get("https://shopee.vn")
+                driver.get("https://shopee.vn/mall")
                 wait_for_page_ready(driver, timeout=10)
 
             for cookie in cookies:
@@ -188,39 +189,166 @@ def scroll_to_bottom(driver, pause_time: float = 2.0):
     pass
 
 
-def handle_popup(driver) -> bool:
+def handle_popup(driver, timeout: int = 5) -> bool:
     """
-    Xử lý popup có thể xuất hiện
+    Xử lý popup có thể xuất hiện trên Shopee - cải tiến với nhiều loại popup và timeout
     """
     try:
-        # Danh sách các selector cho popup thường gặp
-        popup_selectors = [
+        logger.debug("Bắt đầu kiểm tra và xử lý popup...")
+        start_time = time.time()
+
+        # Danh sách các CSS selector cho popup Shopee thường gặp
+        css_selectors = [
+            # Popup đóng chung
             "button[class*='close']",
             ".popup-close",
             "[data-dismiss='modal']",
             ".modal-close",
-            "button:contains('Đóng')",
-            "button:contains('Close')",
-            ".shopee-popup__close-btn"
+
+            # Shopee specific popups
+            ".shopee-popup__close-btn",
+            ".shopee-drawer__close-btn",
+            "button[aria-label='close']",
+            "button[aria-label='Đóng']",
+            "button[data-testid='button']",
+
+            # Cookie consent
+            ".cookie-consent button",
+
+            # App download popup
+            ".app-download-close",
+
+            # Notification popups
+            ".notification-close",
+            ".alert-close",
+
+            # Generic close buttons
+            "button[title='Close']",
+            "button[title='Đóng']",
+            ".btn-close",
+            "[class*='icon-close']",
+            "[class*='close-btn']",
+            "[class*='modal-close']"
         ]
 
-        for selector in popup_selectors:
+        # Danh sách XPath selectors cho text-based buttons
+        xpath_selectors = [
+            "//button[contains(text(), 'Xác nhận')]",
+            "//button[contains(text(), 'Đồng ý')]",
+            "//button[contains(text(), 'OK')]",
+            "//button[contains(text(), 'Bỏ qua')]",
+            "//button[contains(text(), 'Skip')]",
+            "//button[contains(text(), 'Chấp nhận')]",
+            "//button[contains(text(), 'Accept')]",
+            "//button[contains(text(), 'Không, cảm ơn')]",
+            "//button[contains(text(), 'No thanks')]",
+            "//button[contains(text(), 'Đóng')]",
+            "//button[contains(text(), 'Close')]",
+            "//div[contains(@class, 'close') or contains(@class, 'dismiss')]",
+            "//span[contains(@class, 'close')]//parent::button"
+        ]
+
+        popup_found = False
+
+        # Thử đóng popup bằng CSS selectors với timeout
+        for selector in css_selectors:
+            if (time.time() - start_time) > timeout:
+                logger.debug(f"Timeout {timeout}s trong CSS selector handling")
+                break
+
             try:
-                element = WebDriverWait(driver, 2).until(
+                element = WebDriverWait(driver, 0.3).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
+
+                # Scroll đến element và click
+                driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                time.sleep(0.1)
                 element.click()
-                logger.info(f"Đã đóng popup với selector: {selector}")
-                time.sleep(1)
-                return True
+
+                logger.info(f"Đã đóng popup với CSS selector: {selector}")
+                time.sleep(0.2)
+                popup_found = True
+
             except TimeoutException:
                 continue
-            except Exception as e:
-                logger.debug(f"Không thể đóng popup với selector {selector}: {e}")
+            except ElementClickInterceptedException:
+                try:
+                    driver.execute_script("arguments[0].click();", element)
+                    logger.info(f"Đã đóng popup bằng JS với CSS selector: {selector}")
+                    popup_found = True
+                    time.sleep(0.2)
+                except Exception:
+                    continue
+            except Exception:
                 continue
 
-        logger.debug("Không tìm thấy popup nào cần đóng")
-        return False
+        # Thử đóng popup bằng XPath selectors với timeout
+        for xpath in xpath_selectors:
+            if (time.time() - start_time) > timeout:
+                logger.debug(f"Timeout {timeout}s trong XPath handling")
+                break
+
+            try:
+                element = WebDriverWait(driver, 0.3).until(
+                    EC.element_to_be_clickable((By.XPATH, xpath))
+                )
+
+                driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                time.sleep(0.1)
+                element.click()
+
+                logger.info(f"Đã đóng popup với XPath: {xpath}")
+                time.sleep(0.2)
+                popup_found = True
+
+            except TimeoutException:
+                continue
+            except ElementClickInterceptedException:
+                try:
+                    driver.execute_script("arguments[0].click();", element)
+                    logger.info(f"Đã đóng popup bằng JS với XPath: {xpath}")
+                    popup_found = True
+                    time.sleep(0.2)
+                except Exception:
+                    continue
+            except Exception:
+                continue
+
+        # Thử xử lý overlay/backdrop với timeout
+        if (time.time() - start_time) <= timeout:
+            try:
+                overlays = driver.find_elements(By.CSS_SELECTOR, ".modal-backdrop, .overlay, .mask, [class*='backdrop']")
+                for overlay in overlays:
+                    try:
+                        if overlay.is_displayed():
+                            driver.execute_script("arguments[0].click();", overlay)
+                            logger.info("Đã đóng overlay bằng cách click backdrop")
+                            popup_found = True
+                            time.sleep(0.2)
+                            break
+                    except:
+                        continue
+            except Exception:
+                pass
+
+        # Thử nhấn ESC key với timeout
+        if (time.time() - start_time) <= timeout:
+            try:
+                body = driver.find_element(By.TAG_NAME, 'body')
+                body.send_keys(Keys.ESCAPE)
+                logger.debug("Đã thử nhấn ESC để đóng popup")
+                time.sleep(0.2)
+            except Exception:
+                pass
+
+        elapsed = time.time() - start_time
+        if popup_found:
+            logger.info(f"Đã xử lý thành công popup trong {elapsed:.1f}s")
+        else:
+            logger.debug(f"Không tìm thấy popup nào cần xử lý ({elapsed:.1f}s)")
+
+        return popup_found
 
     except Exception as e:
         logger.error(f"Lỗi khi xử lý popup: {e}")
@@ -233,6 +361,336 @@ def get_random_delay() -> float:
     """
     import random
     return random.uniform(1.0, 3.0)
+
+
+def handle_shopee_specific_popups(driver, timeout: int = 5) -> bool:
+    """
+    Xử lý các popup đặc thù của Shopee như age verification, location popup, v.v. với timeout
+    """
+    try:
+        logger.debug("Kiểm tra popup đặc thù của Shopee...")
+        start_time = time.time()
+        popup_handled = False
+
+        # Xử lý popup xác nhận tuổi
+        age_verification_selectors = [
+            "//button[contains(text(), 'Tôi đã đủ 18 tuổi')]",
+            "//button[contains(text(), 'I am 18+')]",
+            "//div[@data-testid='age-gate']//button",
+            "//button[@data-testid='confirm-age']",
+        ]
+
+        for selector in age_verification_selectors:
+            if (time.time() - start_time) > timeout:
+                logger.debug(f"Timeout {timeout}s trong age verification")
+                break
+
+            try:
+                element = WebDriverWait(driver, 1).until(
+                    EC.element_to_be_clickable((By.XPATH, selector))
+                )
+                element.click()
+                logger.info(f"Đã xử lý popup xác nhận tuổi: {selector}")
+                popup_handled = True
+                time.sleep(0.5)
+                break
+            except TimeoutException:
+                continue
+            except Exception as e:
+                logger.debug(f"Lỗi khi xử lý age verification với {selector}: {e}")
+                continue
+
+        # Xử lý popup location/địa điểm
+        if (time.time() - start_time) <= timeout:
+            location_selectors = [
+                "//button[contains(text(), 'Cho phép')]",
+                "//button[contains(text(), 'Allow')]",
+                "//button[contains(text(), 'Đồng ý')]",
+                "//button[contains(@class, 'location')]",
+                "//div[contains(@class, 'location-modal')]//button[last()]"
+            ]
+
+            for selector in location_selectors:
+                if (time.time() - start_time) > timeout:
+                    break
+
+                try:
+                    element = WebDriverWait(driver, 1).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    element.click()
+                    logger.info(f"Đã xử lý popup địa điểm: {selector}")
+                    popup_handled = True
+                    time.sleep(0.5)
+                    break
+                except TimeoutException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Lỗi khi xử lý location popup với {selector}: {e}")
+                    continue
+
+        # Xử lý popup cookie consent
+        if (time.time() - start_time) <= timeout:
+            cookie_selectors = [
+                "//button[contains(text(), 'Chấp nhận tất cả')]",
+                "//button[contains(text(), 'Accept All')]",
+                "//button[@data-testid='cookie-accept']",
+                "//div[@id='cookie-banner']//button[last()]"
+            ]
+
+            for selector in cookie_selectors:
+                if (time.time() - start_time) > timeout:
+                    break
+
+                try:
+                    element = WebDriverWait(driver, 0.5).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    element.click()
+                    logger.info(f"Đã xử lý cookie consent: {selector}")
+                    popup_handled = True
+                    time.sleep(0.3)
+                    break
+                except TimeoutException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Lỗi khi xử lý cookie popup với {selector}: {e}")
+                    continue
+
+        # Xử lý popup tải app
+        if (time.time() - start_time) <= timeout:
+            app_download_selectors = [
+                "//button[contains(text(), 'Bỏ qua')]",
+                "//button[contains(text(), 'Skip')]",
+                "//button[contains(text(), 'Không, cám ơn')]",
+                "//button[contains(text(), 'No thanks')]",
+                "//div[contains(@class, 'app-banner')]//button[@class*='close']",
+                "//div[@data-testid='download-app']//button[last()]"
+            ]
+
+            for selector in app_download_selectors:
+                if (time.time() - start_time) > timeout:
+                    break
+
+                try:
+                    element = WebDriverWait(driver, 0.5).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    element.click()
+                    logger.info(f"Đã từ chối tải app: {selector}")
+                    popup_handled = True
+                    time.sleep(0.3)
+                    break
+                except TimeoutException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Lỗi khi xử lý app download popup với {selector}: {e}")
+                    continue
+
+        elapsed = time.time() - start_time
+        if popup_handled:
+            logger.info(f"Đã xử lý popup đặc thù Shopee trong {elapsed:.1f}s")
+        else:
+            logger.debug(f"Không có popup đặc thù Shopee nào ({elapsed:.1f}s)")
+
+        return popup_handled
+
+    except Exception as e:
+        logger.error(f"Lỗi khi xử lý popup Shopee đặc thù: {e}")
+        return False
+
+
+def wait_and_handle_popup(driver, timeout: int = 10) -> bool:
+    """
+    Chờ popup xuất hiện và xử lý ngay lập tức
+    """
+    try:
+        logger.debug(f"Chờ popup xuất hiện trong {timeout}s...")
+
+        # Các selector cho popup thường gặp trên Shopee
+        popup_indicator_selectors = [
+            "div[class*='modal'][style*='display: block']",
+            "div[class*='modal']:not([style*='display: none'])",
+            "div[class*='popup'][style*='display: block']",
+            "div[role='dialog']",
+            "div[aria-modal='true']",
+            ".shopee-modal:not([style*='display: none'])",
+            ".shopee-popup:not([style*='display: none'])",
+            "[class*='age-gate']",
+            "[class*='location-modal']",
+            "[data-testid*='modal']",
+        ]
+
+        popup_found = False
+        start_time = time.time()
+
+        # Chờ popup xuất hiện
+        while (time.time() - start_time) < timeout:
+            for selector in popup_indicator_selectors:
+                try:
+                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    for element in elements:
+                        if element.is_displayed():
+                            logger.info(f"Phát hiện popup hiển thị với selector: {selector}")
+                            popup_found = True
+                            break
+                    if popup_found:
+                        break
+                except Exception:
+                    continue
+
+            if popup_found:
+                break
+
+            time.sleep(0.5)  # Chờ 0.5s trước khi kiểm tra lại
+
+        if popup_found:
+            logger.info("Popup đã xuất hiện, bắt đầu xử lý...")
+            # Chờ thêm một chút để popup load hoàn toàn
+            time.sleep(1)
+
+            # Xử lý popup trực tiếp
+            handled = False
+            if handle_popup(driver):
+                handled = True
+                logger.info("✅ Đã xử lý popup thành công bằng handle_popup")
+
+            if handle_shopee_specific_popups(driver):
+                handled = True
+                logger.info("✅ Đã xử lý popup đặc thù Shopee")
+
+            return handled
+        else:
+            logger.debug("Không có popup nào xuất hiện")
+            return False
+
+    except Exception as e:
+        logger.error(f"Lỗi trong wait_and_handle_popup: {e}")
+        return False
+
+
+def smart_popup_detection(driver, timeout: int = 5) -> bool:
+    """
+    Phát hiện popup thông minh bằng cách kiểm tra DOM và JavaScript với timeout
+    """
+    try:
+        logger.debug("Bắt đầu phát hiện popup thông minh...")
+        start_time = time.time()
+
+        # Kiểm tra các indicator của popup
+        popup_indicators = [
+            # Body có class modal-open (nhiều site sử dụng)
+            "return document.body.classList.contains('modal-open')",
+
+            # Có overlay/backdrop hiển thị
+            "return document.querySelector('.modal-backdrop, .overlay, [class*=\"backdrop\"]') !== null",
+
+            # Có element với z-index cao (thường là popup)
+            """
+            const elements = document.querySelectorAll('*');
+            for (let elem of elements) {
+                const zIndex = window.getComputedStyle(elem).zIndex;
+                if (zIndex && parseInt(zIndex) > 1000 && elem.offsetWidth > 0 && elem.offsetHeight > 0) {
+                    return true;
+                }
+            }
+            return false;
+            """,
+
+            # Có element với position fixed/absolute hiển thị
+            """
+            const modals = document.querySelectorAll('[class*="modal"], [class*="popup"], [role="dialog"]');
+            for (let modal of modals) {
+                const style = window.getComputedStyle(modal);
+                if ((style.position === 'fixed' || style.position === 'absolute') && 
+                    style.display !== 'none' && 
+                    style.visibility !== 'hidden' && 
+                    modal.offsetWidth > 0 && modal.offsetHeight > 0) {
+                    return true;
+                }
+            }
+            return false;
+            """
+        ]
+
+        popup_detected = False
+
+        for script in popup_indicators:
+            # Kiểm tra timeout
+            if (time.time() - start_time) > timeout:
+                logger.debug(f"Timeout {timeout}s trong smart detection")
+                break
+
+            try:
+                result = driver.execute_script(script)
+                if result:
+                    logger.info("Phát hiện popup bằng JavaScript detection")
+                    popup_detected = True
+                    break
+            except Exception as e:
+                logger.debug(f"JS detection script failed: {e}")
+                continue
+
+        return popup_detected
+
+    except Exception as e:
+        logger.error(f"Lỗi trong smart popup detection: {e}")
+        return False
+
+
+def comprehensive_popup_handler(driver, max_time: int = 15) -> bool:
+    """
+    Xử lý toàn diện tất cả loại popup có thể xuất hiện - có timeout cứng
+    """
+    try:
+        logger.info("Bắt đầu xử lý popup toàn diện...")
+        start_time = time.time()
+
+        popup_handled = False
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
+            # Kiểm tra timeout cứng
+            if (time.time() - start_time) > max_time:
+                logger.warning(f"Timeout {max_time}s - dừng xử lý popup")
+                break
+
+            logger.debug(f"Lần thử {attempt + 1}/{max_attempts}")
+
+            # Chờ một chút để popup có thể xuất hiện
+            time.sleep(0.5)
+
+            try:
+                # Phát hiện popup thông minh với timeout
+                if smart_popup_detection(driver):
+                    logger.info("Smart detection phát hiện popup")
+
+                # Xử lý popup chung với timeout ngắn
+                if handle_popup(driver):
+                    popup_handled = True
+                    logger.info("Đã xử lý popup chung")
+
+                # Xử lý popup đặc thù Shopee với timeout ngắn
+                if handle_shopee_specific_popups(driver):
+                    popup_handled = True
+                    logger.info("Đã xử lý popup đặc thù Shopee")
+
+                # Nếu không có popup nào được xử lý trong lần này, break
+                current_handled = popup_handled
+                if not current_handled and attempt > 0:  # Sau lần đầu
+                    break
+
+            except Exception as attempt_error:
+                logger.warning(f"Lỗi trong attempt {attempt + 1}: {attempt_error}")
+                continue
+
+        elapsed = time.time() - start_time
+        logger.info(f"Hoàn thành xử lý popup toàn diện trong {elapsed:.1f}s")
+        return popup_handled
+
+    except Exception as e:
+        logger.error(f"Lỗi trong comprehensive popup handler: {e}")
+        return False
 
 
 def worker_function(thread_idx: int, urls: List[str], config: Dict = None):
@@ -256,6 +714,9 @@ def worker_function(thread_idx: int, urls: List[str], config: Dict = None):
                 # TODO: Thêm logic crawl URL cụ thể ở đây
                 driver.get(url)
                 wait_for_page_ready(driver)
+
+                # Xử lý popup toàn diện
+                comprehensive_popup_handler(driver)
 
                 # Random delay để tránh detection
                 delay = get_random_delay()
