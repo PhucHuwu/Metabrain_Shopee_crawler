@@ -1,3 +1,3 @@
-.github/
-__pycache__/
-tests/
+/.github/
+/__pycache__/
+/tests/
