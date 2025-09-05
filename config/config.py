@@ -38,7 +38,7 @@ CRAWLER_CONFIG = {
 
 # ======================== SELENIUM CONFIG ========================
 SELENIUM_CONFIG = {
-    'HEADLESS': True,
+    'HEADLESS': False,
     'WINDOW_SIZE': (1920, 1080),
     'PAGE_LOAD_TIMEOUT': 30,
     'IMPLICIT_WAIT': 10,

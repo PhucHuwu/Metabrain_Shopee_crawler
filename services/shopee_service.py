@@ -13,6 +13,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# Import utils từ project
+from utils.selenium_utils import (
+    setup_robust_driver,
+    wait_for_page_ready,
+    save_cookies,
+    load_cookies,
+    handle_popup,
+    get_random_delay
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,8 +43,91 @@ class ShopeeService:
         """
         Khởi tạo undetected Chrome driver với profile riêng
         """
-        # TODO: Implement driver setup with undetected-chromedriver
-        pass
+        try:
+            with self.lock:
+                logger.info(f"Đang khởi tạo driver cho thread {profile_idx}")
+                self.driver = setup_robust_driver(profile_idx, self.config.get('selenium', {}))
+
+                if not self.driver:
+                    logger.error(f"Không thể khởi tạo driver cho profile {profile_idx}")
+                    return False
+
+                logger.info(f"Đã khởi tạo thành công driver cho profile {profile_idx}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Lỗi khi setup driver: {e}")
+            return False
+
+    def access_shopee(self, load_saved_cookies: bool = True) -> bool:
+        """
+        Truy cập vào trang chủ Shopee
+        """
+        try:
+            if not self.driver:
+                logger.error("Driver chưa được khởi tạo")
+                return False
+
+            shopee_url = self.config.get('shopee', {}).get('BASE_URL', 'https://shopee.vn')
+            logger.info(f"Đang truy cập vào {shopee_url}")
+
+            # Truy cập trang chủ Shopee với timeout
+            try:
+                self.driver.set_page_load_timeout(20)  # Giảm timeout xuống
+                self.driver.get(shopee_url)
+                logger.info("Đã tải trang Shopee thành công")
+                
+            except Exception as load_error:
+                logger.warning(f"Lỗi khi tải trang: {load_error}")
+                # Thử lại với trang đơn giản hơn
+                try:
+                    logger.info("Thử truy cập trang đơn giản hơn...")
+                    self.driver.get("https://google.com")
+                    time.sleep(2)
+                    self.driver.get(shopee_url)
+                    logger.info("Đã tải trang Shopee thành công (lần 2)")
+                except Exception as retry_error:
+                    logger.error(f"Vẫn không thể tải trang: {retry_error}")
+                    return False
+            
+            # Chờ trang load hoàn tất
+            logger.info("Đang chờ trang load hoàn tất...")
+            if not wait_for_page_ready(self.driver, timeout=15):  # Giảm timeout
+                logger.warning("Trang Shopee có thể chưa load hoàn tất")
+            else:
+                logger.info("Trang đã load hoàn tất")            # Load cookies đã lưu (nếu có)
+            if load_saved_cookies:
+                logger.info("Đang load cookies đã lưu...")
+                if self.load_cookies("shopee_main"):
+                    logger.info("Đã load cookies thành công")
+                    # Refresh trang sau khi load cookies
+                    try:
+                        self.driver.refresh()
+                        wait_for_page_ready(self.driver, timeout=10)
+                        logger.info("Đã refresh trang với cookies")
+                    except Exception as refresh_error:
+                        logger.warning(f"Lỗi khi refresh: {refresh_error}")
+                else:
+                    logger.info("Không có cookies để load hoặc load không thành công")
+            
+            # Xử lý popup nếu có
+            logger.info("Đang kiểm tra popup...")
+            if handle_popup(self.driver):
+                logger.info("Đã đóng popup")
+            else:
+                logger.info("Không có popup nào")
+            
+            # Delay ngẫu nhiên để tránh detection
+            delay = get_random_delay()
+            logger.info(f"Delay {delay:.1f}s để tránh detection...")
+            time.sleep(delay)
+            
+            logger.info("Đã truy cập thành công vào Shopee")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi truy cập Shopee: {e}")
+            return False
 
     def search_shops(self, keyword: str, max_pages: int = 10) -> List[str]:
         """
@@ -89,19 +182,41 @@ class ShopeeService:
         """
         Lưu cookies để sử dụng lại
         """
-        # TODO: Implement cookie saving
-        pass
+        try:
+            if self.driver:
+                save_cookies(self.driver, profile_name)
+            else:
+                logger.warning("Driver không tồn tại, không thể lưu cookies")
+        except Exception as e:
+            logger.error(f"Lỗi khi lưu cookies: {e}")
 
     def load_cookies(self, profile_name: str) -> bool:
         """
         Load cookies từ file
         """
-        # TODO: Implement cookie loading
-        pass
+        try:
+            if self.driver:
+                return load_cookies(self.driver, profile_name)
+            else:
+                logger.warning("Driver không tồn tại, không thể load cookies")
+                return False
+        except Exception as e:
+            logger.error(f"Lỗi khi load cookies: {e}")
+            return False
 
     def cleanup(self):
         """
         Dọn dẹp resources
         """
-        # TODO: Implement cleanup logic
-        pass
+        try:
+            if self.driver:
+                # Lưu cookies trước khi đóng
+                self.save_cookies("shopee_main")
+
+                # Đóng driver
+                self.driver.quit()
+                logger.info("Đã đóng driver và dọn dẹp resources")
+            else:
+                logger.debug("Driver không tồn tại, không cần cleanup")
+        except Exception as e:
+            logger.error(f"Lỗi khi cleanup: {e}")

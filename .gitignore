@@ -1,3 +1,5 @@
 /.github/
-/__pycache__/
-/tests/
+__pycache__/
+/Profile_*/
+*.log
+data/*
