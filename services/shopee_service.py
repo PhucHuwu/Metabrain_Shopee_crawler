@@ -24,6 +24,8 @@ from utils.selenium_utils import (
     wait_and_handle_popup,
     smart_popup_detection,
     get_random_delay,
+    get_random_user_agent,
+    set_user_agent_for_driver,
     driver_lock
 )
 
@@ -42,6 +44,26 @@ class ShopeeService:
         self.config = config
         self.driver = None
         self.lock = threading.Lock()
+
+    def change_user_agent(self) -> str:
+        """
+        Thay đổi user agent để tránh detection
+        """
+        try:
+            if not self.driver:
+                logger.warning("Driver không tồn tại, không thể thay đổi user agent")
+                return None
+
+            new_user_agent = set_user_agent_for_driver(self.driver)
+            if new_user_agent:
+                logger.info(f"Đã thay đổi User-Agent: {new_user_agent[:80]}...")
+                return new_user_agent
+            else:
+                logger.warning("Không thể thay đổi user agent")
+                return None
+        except Exception as e:
+            logger.error(f"Lỗi khi thay đổi user agent: {e}")
+            return None
 
     def setup_driver(self, profile_idx: int = 0):
         """
@@ -66,12 +88,16 @@ class ShopeeService:
 
     def access_shopee(self, load_saved_cookies: bool = True) -> bool:
         """
-        Truy cập vào trang chủ Shopee
+        Truy cập vào trang chủ Shopee với fake user agent
         """
         try:
             if not self.driver:
                 logger.error("Driver chưa được khởi tạo")
                 return False
+
+            # Thay đổi user agent trước khi truy cập
+            logger.info("Đang thay đổi User-Agent để tránh detection...")
+            self.change_user_agent()
 
             shopee_url = self.config.get('shopee', {}).get('BASE_URL', 'https://shopee.vn/mall')
             logger.info(f"Đang truy cập vào {shopee_url}")
@@ -122,9 +148,9 @@ class ShopeeService:
                 # Sử dụng comprehensive handler với timeout ngắn
                 popup_handled = comprehensive_popup_handler(self.driver, max_time=10)
                 if popup_handled:
-                    logger.info("✅ Đã xử lý popup thành công")
+                    logger.info("Đã xử lý popup thành công")
                 else:
-                    logger.info("ℹ️ Không có popup nào cần xử lý")
+                    logger.info("Không có popup nào cần xử lý")
 
             except Exception as popup_error:
                 logger.warning(f"Lỗi khi xử lý popup: {popup_error}")
@@ -143,6 +169,133 @@ class ShopeeService:
         except Exception as e:
             logger.error(f"Lỗi khi truy cập Shopee: {e}")
             return False
+
+    def get_category_links(self) -> List[Dict[str, str]]:
+        """
+        Lấy các đường dẫn category từ image carousel trên trang Shopee mall với fake user agent
+        Returns: List of dict containing category info {"name": str, "href": str}
+        """
+        try:
+            if not self.driver:
+                logger.error("Driver chưa được khởi tạo")
+                return []
+
+            # Thay đổi user agent trước khi crawl category
+            logger.info("Đang thay đổi User-Agent trước khi crawl category...")
+            self.change_user_agent()
+
+            logger.info("Đang tìm image carousel và lấy category links...")
+
+            # Chờ carousel load
+            time.sleep(2)
+
+            # Danh sách các selector để tìm carousel
+            carousel_selectors = [
+                "ul.image-carousel__item-list",
+                "ul[class*='image-carousel__item-list']",
+                ".image-carousel__item-list",
+                "[class*='image-carousel'] ul",
+                ".carousel ul",
+                "[data-testid*='carousel'] ul",
+                "ul[class*='carousel']"
+            ]
+
+            carousel_element = None
+            used_selector = None
+
+            # Thử tìm carousel với các selector khác nhau
+            for selector in carousel_selectors:
+                try:
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    if elements:
+                        # Lấy element đầu tiên có chứa links
+                        for elem in elements:
+                            links = elem.find_elements(By.TAG_NAME, "a")
+                            if links:
+                                carousel_element = elem
+                                used_selector = selector
+                                logger.info(f"Tìm thấy carousel với selector: {selector}")
+                                break
+                        if carousel_element:
+                            break
+                except Exception as e:
+                    logger.debug(f"Lỗi khi tìm carousel với selector {selector}: {e}")
+                    continue
+
+            if not carousel_element:
+                logger.warning("Không tìm thấy image carousel")
+                return []
+
+            # Lấy tất cả các link trong carousel
+            category_links = []
+
+            try:
+                # Tìm tất cả các thẻ a trong carousel
+                link_elements = carousel_element.find_elements(By.TAG_NAME, "a")
+                logger.info(f"Tìm thấy {len(link_elements)} link trong carousel")
+
+                for i, link_elem in enumerate(link_elements):
+                    try:
+                        href = link_elem.get_attribute('href')
+                        if href and href.startswith('http'):
+                            # Thử lấy tên category từ text hoặc title hoặc img alt
+                            category_name = ""
+
+                            # Thử lấy text của link
+                            text = link_elem.text.strip()
+                            if text:
+                                category_name = text
+
+                            # Nếu không có text, thử lấy từ title attribute
+                            if not category_name:
+                                title = link_elem.get_attribute('title')
+                                if title:
+                                    category_name = title.strip()
+
+                            # Nếu vẫn không có, thử lấy alt text của image bên trong
+                            if not category_name:
+                                try:
+                                    img = link_elem.find_element(By.TAG_NAME, "img")
+                                    alt_text = img.get_attribute('alt')
+                                    if alt_text:
+                                        category_name = alt_text.strip()
+                                except:
+                                    pass
+
+                            # Nếu vẫn không có tên, sử dụng index
+                            if not category_name:
+                                category_name = f"Category_{i+1}"
+
+                            category_info = {
+                                "name": category_name,
+                                "href": href,
+                                "index": i + 1
+                            }
+
+                            category_links.append(category_info)
+                            logger.debug(f"Link {i+1}: {category_name} -> {href}")
+
+                    except Exception as link_error:
+                        logger.warning(f"Lỗi khi xử lý link {i+1}: {link_error}")
+                        continue
+
+                logger.info(f"Đã lấy thành công {len(category_links)} category links")
+
+                # In ra danh sách category để kiểm tra
+                if category_links:
+                    logger.info("Danh sách categories tìm thấy:")
+                    for cat in category_links:
+                        logger.info(f"  - {cat['name']}: {cat['href']}")
+
+                return category_links
+
+            except Exception as extract_error:
+                logger.error(f"Lỗi khi trích xuất links từ carousel: {extract_error}")
+                return []
+
+        except Exception as e:
+            logger.error(f"Lỗi khi lấy category links: {e}")
+            return []
 
     def search_shops(self, keyword: str, max_pages: int = 10) -> List[str]:
         """

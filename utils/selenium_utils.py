@@ -10,6 +10,7 @@ import time
 import json
 import os
 import threading
+import random
 from typing import List, Optional, Dict
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -27,10 +28,70 @@ logger = logging.getLogger(__name__)
 # Thread-safe driver lock
 driver_lock = threading.Lock()
 
+# Danh sách user agents để tránh detection
+USER_AGENTS = [
+    # Chrome Windows
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
+
+    # Chrome macOS
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+
+    # Firefox Windows
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
+
+    # Edge Windows
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0',
+
+    # Chrome Linux
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+
+    # Safari macOS
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15'
+]
+
+
+def get_random_user_agent() -> str:
+    """
+    Lấy random user agent để tránh detection
+    """
+    return random.choice(USER_AGENTS)
+
+
+def set_user_agent_for_driver(driver, user_agent: str = None):
+    """
+    Thay đổi user agent cho driver (chỉ áp dụng cho request tiếp theo)
+    """
+    if not user_agent:
+        user_agent = get_random_user_agent()
+
+    try:
+        # Thực thi JavaScript để thay đổi user agent
+        script = f"""
+        Object.defineProperty(navigator, 'userAgent', {{
+            get: function () {{ return '{user_agent}'; }}
+        }});
+        """
+        driver.execute_script(script)
+        logger.debug(f"Đã thay đổi user agent thành: {user_agent[:80]}...")
+        return user_agent
+    except Exception as e:
+        logger.warning(f"Không thể thay đổi user agent: {e}")
+        return None
+
 
 def create_driver_with_lock(profile_idx: int = 0, config: Dict = None):
     """
-    Tạo driver thread-safe với profile directory - PHƯƠNG PHÁP DUY NHẤT
+    Tạo driver thread-safe với profile directory và random user agent - PHƯƠNG PHÁP DUY NHẤT
     """
     try:
         logger.info(f"Khởi tạo driver thread-safe cho profile {profile_idx}")
@@ -41,8 +102,13 @@ def create_driver_with_lock(profile_idx: int = 0, config: Dict = None):
             os.makedirs(profile_directory)
             logger.info(f"Đã tạo profile directory: {profile_directory}")
 
+        # Lấy random user agent
+        user_agent = get_random_user_agent()
+        logger.info(f"Sử dụng User-Agent: {user_agent[:80]}...")
+
         # Cấu hình options
         options = uc.ChromeOptions()
+        options.add_argument(f"--user-agent={user_agent}")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")

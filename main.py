@@ -12,6 +12,7 @@ import sys
 import os
 import logging
 from datetime import datetime
+from typing import List, Dict
 
 # Thêm thư mục gốc vào Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +26,7 @@ def main():
     print("SHOPEE + GOOGLE MAPS CRAWLER")
     print("Hệ thống cào dữ liệu thương mại điện tử Việt Nam")
     print("=" * 60)
-    
+
     # Thiết lập logging
     logging_config = get_config('logging')
     logger = setup_logger('main', logging_config)
@@ -44,41 +45,61 @@ def main():
     # Khởi tạo Shopee service
     logger.info("Khởi tạo Shopee service...")
     shopee_service = ShopeeService(config)
-    
+
     try:
         # Bước 1: Khởi tạo driver
         logger.info("Bước 1: Khởi tạo Chrome driver...")
         if not shopee_service.setup_driver(profile_idx=0):
             logger.error("Không thể khởi tạo driver. Thoát chương trình.")
             return False
-        
+
         # Bước 2: Truy cập vào trang Shopee
         logger.info("Bước 2: Truy cập vào trang Shopee...")
         if not shopee_service.access_shopee(load_saved_cookies=False):  # Không load cookies lần đầu
             logger.error("Không thể truy cập Shopee. Thoát chương trình.")
             return False
-        
+
         logger.info("Đã khởi tạo driver và truy cập Shopee thành công!")
+
+        # Bước 3: Lấy category links từ image carousel
+        logger.info("Bước 3: Lấy danh sách categories từ image carousel...")
+        category_links = shopee_service.get_category_links()
+
+        if category_links:
+            logger.info(f"Đã lấy thành công {len(category_links)} category links!")
+            print("\n" + "="*60)
+            print("DANH SÁCH CATEGORIES TÌM THẤY:")
+            print("="*60)
+            for i, cat in enumerate(category_links, 1):
+                print(f"{i:2d}. {cat['name']}")
+                print(f"    Link: {cat['href']}")
+                print()
+        else:
+            logger.warning("Không lấy được category links nào")
+            print("Không tìm thấy category nào!")
+
         logger.info("Sẵn sàng cho các bước crawl tiếp theo...")
-        
+
         # Giữ driver mở để kiểm tra (có thể bỏ sau)
         input("Nhấn Enter để đóng driver và thoát...")
-        
+
         return True
 
     except KeyboardInterrupt:
         logger.info("Người dùng dừng chương trình")
         return False
-        
+
     except Exception as e:
         logger.error(f"Lỗi không mong muốn: {e}")
         return False
-        
+
     finally:
         # Dọn dẹp resources
         logger.info("Dọn dẹp resources...")
         shopee_service.cleanup()
         logger.info("Hoàn tất!")
+
+
 if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)
