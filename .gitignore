@@ -1,3 +1,6 @@
-/.github/
-/__pycache__/
-/tests/
+.github/
+__pycache__/
+Profile_*/
+*.log
+data/*
+cookies_shopee_main.json
