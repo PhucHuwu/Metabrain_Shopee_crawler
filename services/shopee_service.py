@@ -206,17 +206,57 @@ class ShopeeService:
 
     def cleanup(self):
         """
-        Dọn dẹp resources
+        Dọn dẹp resources với xử lý lỗi tốt hơn
         """
         try:
             if self.driver:
                 # Lưu cookies trước khi đóng
-                self.save_cookies("shopee_main")
+                try:
+                    self.save_cookies("shopee_main")
+                    logger.debug("Đã lưu cookies trước khi đóng")
+                except Exception as cookie_error:
+                    logger.warning(f"Không thể lưu cookies: {cookie_error}")
 
-                # Đóng driver
-                self.driver.quit()
+                # Đóng driver với multiple attempts
+                self._safe_quit_driver()
                 logger.info("Đã đóng driver và dọn dẹp resources")
             else:
                 logger.debug("Driver không tồn tại, không cần cleanup")
         except Exception as e:
             logger.error(f"Lỗi khi cleanup: {e}")
+    
+    def _safe_quit_driver(self):
+        """
+        Đóng driver một cách an toàn với multiple attempts
+        """
+        if not self.driver:
+            return
+            
+        attempts = 0
+        max_attempts = 3
+        
+        while attempts < max_attempts:
+            try:
+                # Thử đóng tất cả cửa sổ trước
+                try:
+                    self.driver.close()
+                    logger.debug("Đã đóng cửa sổ hiện tại")
+                except:
+                    pass
+                
+                # Thử quit driver
+                self.driver.quit()
+                logger.debug(f"Driver quit thành công (attempt {attempts + 1})")
+                self.driver = None
+                return
+                
+            except Exception as e:
+                attempts += 1
+                logger.debug(f"Attempt {attempts} quit driver thất bại: {e}")
+                
+                if attempts < max_attempts:
+                    import time
+                    time.sleep(0.5)  # Đợi ngắn trước khi thử lại
+                else:
+                    logger.warning(f"Không thể quit driver sau {max_attempts} attempts")
+                    self.driver = None

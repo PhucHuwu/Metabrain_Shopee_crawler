@@ -59,9 +59,11 @@ def main():
             return False
         
         logger.info("Đã khởi tạo driver và truy cập Shopee thành công!")
-        logger.info("Sẵn sàng cho các bước crawl tiếp theo...")        # Giữ driver mở để kiểm tra (có thể bỏ sau)
-        input("⏸️  Nhấn Enter để đóng driver và thoát...")
-
+        logger.info("Sẵn sàng cho các bước crawl tiếp theo...")
+        
+        # Giữ driver mở để kiểm tra (có thể bỏ sau)
+        input("Nhấn Enter để đóng driver và thoát...")
+        
         return True
 
     except KeyboardInterrupt:
