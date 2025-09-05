@@ -15,12 +15,13 @@ from selenium.webdriver.support import expected_conditions as EC
 
 # Import utils từ project
 from utils.selenium_utils import (
-    setup_robust_driver,
+    create_driver_with_lock,
     wait_for_page_ready,
     save_cookies,
     load_cookies,
     handle_popup,
-    get_random_delay
+    get_random_delay,
+    driver_lock
 )
 
 logger = logging.getLogger(__name__)
@@ -41,19 +42,20 @@ class ShopeeService:
 
     def setup_driver(self, profile_idx: int = 0):
         """
-        Khởi tạo undetected Chrome driver với profile riêng
+        Khởi tạo undetected Chrome driver với profile riêng và thread-safe lock
         """
         try:
-            with self.lock:
-                logger.info(f"Đang khởi tạo driver cho thread {profile_idx}")
-                self.driver = setup_robust_driver(profile_idx, self.config.get('selenium', {}))
+            logger.info(f"Đang khởi tạo driver cho thread {profile_idx}")
 
-                if not self.driver:
-                    logger.error(f"Không thể khởi tạo driver cho profile {profile_idx}")
-                    return False
+            # Sử dụng hàm mới với driver_lock
+            self.driver = create_driver_with_lock(profile_idx, self.config.get('selenium', {}))
 
-                logger.info(f"Đã khởi tạo thành công driver cho profile {profile_idx}")
-                return True
+            if not self.driver:
+                logger.error(f"Không thể khởi tạo driver cho profile {profile_idx}")
+                return False
+
+            logger.info(f"Đã khởi tạo thành công driver cho profile {profile_idx}")
+            return True
 
         except Exception as e:
             logger.error(f"Lỗi khi setup driver: {e}")
@@ -76,7 +78,7 @@ class ShopeeService:
                 self.driver.set_page_load_timeout(20)  # Giảm timeout xuống
                 self.driver.get(shopee_url)
                 logger.info("Đã tải trang Shopee thành công")
-                
+
             except Exception as load_error:
                 logger.warning(f"Lỗi khi tải trang: {load_error}")
                 # Thử lại với trang đơn giản hơn
@@ -89,7 +91,7 @@ class ShopeeService:
                 except Exception as retry_error:
                     logger.error(f"Vẫn không thể tải trang: {retry_error}")
                     return False
-            
+
             # Chờ trang load hoàn tất
             logger.info("Đang chờ trang load hoàn tất...")
             if not wait_for_page_ready(self.driver, timeout=15):  # Giảm timeout
@@ -109,22 +111,22 @@ class ShopeeService:
                         logger.warning(f"Lỗi khi refresh: {refresh_error}")
                 else:
                     logger.info("Không có cookies để load hoặc load không thành công")
-            
+
             # Xử lý popup nếu có
             logger.info("Đang kiểm tra popup...")
             if handle_popup(self.driver):
                 logger.info("Đã đóng popup")
             else:
                 logger.info("Không có popup nào")
-            
+
             # Delay ngẫu nhiên để tránh detection
             delay = get_random_delay()
             logger.info(f"Delay {delay:.1f}s để tránh detection...")
             time.sleep(delay)
-            
+
             logger.info("Đã truy cập thành công vào Shopee")
             return True
-            
+
         except Exception as e:
             logger.error(f"Lỗi khi truy cập Shopee: {e}")
             return False
@@ -224,17 +226,17 @@ class ShopeeService:
                 logger.debug("Driver không tồn tại, không cần cleanup")
         except Exception as e:
             logger.error(f"Lỗi khi cleanup: {e}")
-    
+
     def _safe_quit_driver(self):
         """
         Đóng driver một cách an toàn với multiple attempts
         """
         if not self.driver:
             return
-            
+
         attempts = 0
         max_attempts = 3
-        
+
         while attempts < max_attempts:
             try:
                 # Thử đóng tất cả cửa sổ trước
@@ -243,17 +245,17 @@ class ShopeeService:
                     logger.debug("Đã đóng cửa sổ hiện tại")
                 except:
                     pass
-                
+
                 # Thử quit driver
                 self.driver.quit()
                 logger.debug(f"Driver quit thành công (attempt {attempts + 1})")
                 self.driver = None
                 return
-                
+
             except Exception as e:
                 attempts += 1
                 logger.debug(f"Attempt {attempts} quit driver thất bại: {e}")
-                
+
                 if attempts < max_attempts:
                     import time
                     time.sleep(0.5)  # Đợi ngắn trước khi thử lại

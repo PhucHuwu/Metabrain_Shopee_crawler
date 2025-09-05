@@ -3,4 +3,4 @@ __pycache__/
 Profile_*/
 *.log
 data/*
-cookies_shopee_main.json
+cookies_*
