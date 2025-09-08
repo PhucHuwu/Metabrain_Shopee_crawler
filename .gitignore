@@ -1,3 +1,4 @@
 Profile*/
 /__pycache__/
 .github/
+config.py
