@@ -1,6 +1,3 @@
+Profile*/
+/__pycache__/
 .github/
-__pycache__/
-Profile_*/
-*.log
-data/*
-cookies_*
