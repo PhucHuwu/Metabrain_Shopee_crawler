@@ -2,3 +2,4 @@ Profile*/
 /__pycache__/
 .github/
 config.py
+cookies.json

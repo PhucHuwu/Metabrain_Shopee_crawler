@@ -8,6 +8,7 @@ import os
 import json
 import re
 import logging
+import urllib.parse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,8 +53,16 @@ def extract_category_hrefs(driver):
         hrefs = []
         for elem in href_elements:
             href = elem.get_attribute("href")
-            if href and re.match(mall_pattern, href):
-                hrefs.append(href)
+            if not href:
+                continue
+            # Decode percent-encoded characters so Vietnamese characters are saved correctly
+            try:
+                decoded_href = urllib.parse.unquote(href)
+            except Exception:
+                decoded_href = href
+
+            if re.match(mall_pattern, decoded_href):
+                hrefs.append(decoded_href)
 
         return hrefs
     except Exception as e:
@@ -63,19 +72,61 @@ def extract_category_hrefs(driver):
 
 def save_hrefs_to_file(hrefs, filename="category_hrefs.json"):
     try:
+        # Kiểm tra dữ liệu có phải unicode hợp lệ không
+        for href in hrefs:
+            if not isinstance(href, str):
+                logger.warning(f"Href không phải chuỗi: {href}")
         data = {
             "total_hrefs": len(hrefs),
             "category_hrefs": hrefs
         }
-
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        logger.info(f"Da luu {len(hrefs)} href vao file '{filename}'")
-        return True
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.info(f"Da luu {len(hrefs)} href vao file '{filename}'")
+            return True
+        except UnicodeEncodeError as ue:
+            logger.error(f"UnicodeEncodeError khi luu file JSON: {ue}. Thu ghi dang binary.")
+            # Fallback: ghi dạng binary
+            try:
+                with open(filename, "wb") as f:
+                    content = json.dumps(data, ensure_ascii=False, indent=2)
+                    f.write(content.encode("utf-8", errors="replace"))
+                logger.info(f"Da fallback ghi binary thanh cong vao '{filename}'")
+                return True
+            except Exception as e2:
+                logger.error(f"Loi khi fallback ghi file JSON: {e2}")
+                return False
+        except Exception as e:
+            logger.error(f"Loi khi luu file JSON: {e}")
+            return False
     except Exception as e:
-        logger.error(f"Loi khi luu file JSON: {e}")
+        logger.error(f"Loi khi chuan bi du lieu JSON: {e}")
         return False
+
+
+def load_cookies_to_driver(driver, cookies_file="cookies.json"):
+    try:
+        with open(cookies_file, "r", encoding="utf-8") as f:
+            cookies = json.load(f)
+        for cookie in cookies:
+            # Selenium expects 'expiry' instead of 'expirationDate'
+            if "expirationDate" in cookie:
+                cookie["expiry"] = int(cookie["expirationDate"])
+                del cookie["expirationDate"]
+            # Remove fields not accepted by Selenium
+            for k in ["hostOnly", "storeId", "id", "sameSite"]:
+                cookie.pop(k, None)
+            # Selenium expects domain without leading dot
+            if "domain" in cookie and cookie["domain"].startswith("."):
+                cookie["domain"] = cookie["domain"][1:]
+            try:
+                driver.add_cookie(cookie)
+            except Exception as e:
+                logger.warning(f"Khong the add cookie {cookie.get('name')}: {e}")
+        logger.info(f"Da nap {len(cookies)} cookies vao driver")
+    except Exception as e:
+        logger.error(f"Loi khi nap cookies: {e}")
 
 
 def crawl_shopee_categories(idx=0):
@@ -85,6 +136,10 @@ def crawl_shopee_categories(idx=0):
 
     try:
         driver.get("https://shopee.vn/mall/")
+        # Load cookies sau khi truy cap trang
+        load_cookies_to_driver(driver, "cookies.json")
+        driver.refresh()
+        time.sleep(2)  # Cho cookies co hieu luc
         hrefs = extract_category_hrefs(driver)
 
         if hrefs:
