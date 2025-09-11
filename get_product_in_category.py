@@ -4,11 +4,9 @@ import logging
 import threading
 import time
 
-# Import cấu hình chung (bao gồm logging) ngay khi module tải
 try:
-    import config  # noqa: F401 - đảm bảo logging được cấu hình
+    import config
 except Exception:
-    # Nếu config không tồn tại hoặc lỗi, tiếp tục với cấu hình logging mặc định
     logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
