@@ -1,5 +1,6 @@
 Profile*/
-/__pycache__/
+funcs/__pycache__/
 .github/
 config.py
 cookies.json
+__pycache__/

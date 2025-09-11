@@ -36,9 +36,8 @@ def setup_driver(idx):
 
 
 if __name__ == "__main__":
-    for i in range(25):
-        driver = setup_driver(i)
-        if driver:
-            driver.get("https://shopee.vn/")
-            if input() == "ok":
-                driver.quit()
+    driver = setup_driver(0)
+    if driver:
+        driver.get("https://shopee.vn/")
+        if input() == "ok":
+            driver.quit()
