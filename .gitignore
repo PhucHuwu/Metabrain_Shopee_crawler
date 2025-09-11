@@ -1,3 +1,7 @@
 Profile*/
-/__pycache__/
+funcs/__pycache__/
 .github/
+config.py
+__pycache__/
+logs/
+data/
