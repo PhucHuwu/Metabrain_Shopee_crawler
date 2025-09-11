@@ -9,12 +9,6 @@ driver_lock = threading.Lock()
 
 
 def setup_driver(profile_idx: int = 0, headless: bool = False, user_data_base: str = None):
-    """Create and return an undetected-chromedriver instance using a profile directory.
-
-    - profile_idx: index to construct a local `Profile_{idx}` folder
-    - headless: if True attempts to run headless (best-effort)
-    - user_data_base: optional base directory for user data (overrides current dir)
-    """
     options = uc.ChromeOptions()
     base = user_data_base if user_data_base else '.'
     profile_directory = os.path.join(base, f"Profile_{profile_idx}")
