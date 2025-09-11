@@ -73,7 +73,7 @@ def hover_element(driver, element, max_offset: int = 15, moves: int = 3,
         return False
 
 
-def random_scroll(driver, min_scrolls: int = 1, max_scrolls: int = 4,
+def random_scroll(driver, min_scrolls: int = 5, max_scrolls: int = 20,
                   min_px: int = 200, max_px: int = 800,
                   delay_min: float = 0.2, delay_max: float = 0.8,
                   rng: Optional[random.Random] = None) -> List[int]:

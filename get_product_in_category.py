@@ -3,6 +3,8 @@ import json
 import logging
 import threading
 import time
+import re
+import urllib.parse
 
 try:
     import config
@@ -34,98 +36,78 @@ def category_chunking(chunk_size: int = 5, file_path: str | Path | None = None):
         return []
 
 
-def get_infor_product(driver, *, container_selector: str | None = None, item_selector: str | None = None) -> list:
-    results = []
+def get_infor_product(driver) -> list:
+    from selenium.webdriver.common.by import By
+
+    results: list = []
+
     try:
-        from selenium.common.exceptions import NoSuchElementException
-        from selenium.webdriver.common.by import By
-
-        try:
-            from config import SELECTORS
-        except Exception:
-            SELECTORS = {}
-
-        container_xpath = SELECTORS.get('product_list_container_xpath')
-        container_css = container_selector or SELECTORS.get('product_list_container_css', 'div.ofs-recommend-page')
-
-        containers = []
-        if container_xpath:
-            try:
-                containers = driver.find_elements(By.XPATH, container_xpath)
-            except Exception:
-                containers = []
-
-        if not containers and container_css:
-            containers = driver.find_elements(By.CSS_SELECTOR, container_css)
-
-        if not containers:
-            logger.debug(f'Không tìm thấy container với selector (xpath:{container_xpath} css:{container_css})')
-            return results
-
-        for cont in containers:
-            item_xpath = SELECTORS.get('product_item_xpath')
-            item_css = item_selector or SELECTORS.get('product_item_css', 'a.contents')
-
-            items = []
-            if item_xpath:
-                try:
-                    items = cont.find_elements(By.XPATH, item_xpath)
-                except Exception:
-                    items = []
-
-            if not items and item_css:
-                items = cont.find_elements(By.CSS_SELECTOR, item_css)
-            for item in items:
-                href = None
-                name = None
-                try:
-                    href = item.get_attribute('href')
-                except Exception:
-                    href = None
-
-                try:
-                    text = item.text.strip()
-                    if text:
-                        name = text
-                except Exception:
-                    name = None
-
-                if not name:
-                    try:
-                        sub = item.find_element(By.CSS_SELECTOR, "div[class*='line-clamp']")
-                        t = sub.text.strip()
-                        if t:
-                            name = t
-                    except NoSuchElementException:
-                        pass
-                    except Exception:
-                        pass
-
-                if not name:
-                    try:
-                        img = item.find_element(By.CSS_SELECTOR, 'img')
-                        alt = img.get_attribute('alt')
-                        if alt and alt.strip():
-                            name = alt.strip()
-                    except NoSuchElementException:
-                        pass
-                    except Exception:
-                        pass
-
-                if not name:
-                    try:
-                        title = item.get_attribute('title')
-                        if title and title.strip():
-                            name = title.strip()
-                    except Exception:
-                        pass
-
-                results.append({'href': href, 'name': name})
-
+        container = driver.find_element(By.XPATH, "//div[contains(@class,'ofs-recommend-page')]")
     except Exception as e:
-        logger.exception(f'Lỗi khi lấy thông tin sản phẩm: {e}')
+        logger.warning(f"Không tìm thấy container 'ofs-recommend-page': {e}")
+        return results
+
+    try:
+        anchors = container.find_elements(By.XPATH, ".//a[@href][.//img or .//div]")
+    except Exception as e:
+        logger.debug(f"Lỗi khi tìm anchors trong container: {e}")
+        return results
+
+    for a in anchors:
+        try:
+            href = a.get_attribute('href') or ''
+
+            name = ''
+            try:
+                img = a.find_element(By.XPATH, ".//img[@alt]")
+                name = (img.get_attribute('alt') or '').strip()
+            except Exception:
+                name = ''
+
+            if not name:
+                try:
+                    name = (a.text or '').strip()
+                except Exception:
+                    name = ''
+
+            if not name:
+                try:
+                    div = a.find_element(By.XPATH, ".//div[normalize-space(text())!='']")
+                    name = (div.text or '').strip()
+                except Exception:
+                    name = ''
+
+            results.append({'href': href, 'name': name})
+        except Exception as e:
+            logger.debug(f"Lỗi khi xử lý 1 product anchor: {e}")
+            continue
 
     return results
+
+
+def extract_category_name_from_url(url: str) -> str:
+    try:
+        seg = urllib.parse.unquote(str(url).rstrip('/').split('/')[-1])
+        name = re.sub(r'-cat\.\d+$', '', seg)
+        name = name.replace('-', ' ').strip()
+        return name or seg
+    except Exception as e:
+        logger.debug(f"Lỗi khi trích tên category từ url {url}: {e}")
+        return 'category'
+
+
+def sanitize_filename(name: str, max_len: int = 200) -> str:
+    try:
+        invalid = '<>:"/\\|?*\n\r\t'
+        cleaned = ''.join('_' if c in invalid else c for c in str(name))
+        cleaned = cleaned.strip()
+        if len(cleaned) > max_len:
+            cleaned = cleaned[:max_len]
+        cleaned = cleaned.rstrip(' .')
+        return cleaned or 'category'
+    except Exception as e:
+        logger.debug(f"Lỗi khi sanitize filename '{name}': {e}")
+        return 'category'
 
 
 def get_product_in_category(thread_idx, categories, page_num: int = 5):
@@ -152,6 +134,18 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
     for cat in categories:
         logger.info(f"[Thread {thread_idx}] Bắt đầu lấy sản phẩm trong category: {cat}")
 
+        cat_name = extract_category_name_from_url(cat)
+        safe_name = sanitize_filename(cat_name)
+        out_dir = Path(__file__).parent / 'data'
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.debug(f"Không thể tạo thư mục data: {e}")
+
+        out_file = out_dir / f"{safe_name}.json"
+
+        products_all: list = []
+
         for i in range(1, page_num + 1):
             driver.get(f"{cat}/popular?pageNumber={i}")
             load_cookies_to_driver(driver)
@@ -161,14 +155,27 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
 
             random_sleep()
             hover_element(driver, driver.find_element('tag name', 'body'))
-            random_scroll(driver, min_scrolls=3, max_scrolls=6)
+            random_scroll(driver)
 
             products = get_infor_product(driver)
             logger.info(f"[Thread {thread_idx}] Category: {cat} - Page {i} - Found {len(products)} products")
 
+            try:
+                if products:
+                    products_all.extend(products)
+            except Exception as e:
+                logger.debug(f"Lỗi khi gộp sản phẩm vào list tổng: {e}")
+
             random_sleep()
             hover_element(driver, driver.find_element('tag name', 'body'))
-            random_scroll(driver, min_scrolls=3, max_scrolls=6)
+            random_scroll(driver)
+            
+        try:
+            with out_file.open('w', encoding='utf-8') as f:
+                json.dump(products_all, f, ensure_ascii=False, indent=2)
+            logger.info(f"[Thread {thread_idx}] Đã lưu {len(products_all)} products vào {out_file}")
+        except Exception as e:
+            logger.exception(f"Lỗi khi lưu file {out_file}: {e}")
 
 
 if __name__ == '__main__':
@@ -176,7 +183,7 @@ if __name__ == '__main__':
     threads = []
 
     for idx, cat in enumerate(list_categories):
-        thread = threading.Thread(target=get_product_in_category, args=(idx, cat, 5))
+        thread = threading.Thread(target=get_product_in_category, args=(idx, cat, 1))
         thread.start()
         time.sleep(1)
         threads.append(thread)

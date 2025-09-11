@@ -38,6 +38,6 @@ def setup_driver(idx):
 if __name__ == "__main__":
     driver = setup_driver(0)
     if driver:
-        driver.get("https://shopee.vn/")
+        driver.get("https://shopee.vn/mall/")
         if input() == "ok":
             driver.quit()

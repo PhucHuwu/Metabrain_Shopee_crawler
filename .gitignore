@@ -2,5 +2,6 @@ Profile*/
 funcs/__pycache__/
 .github/
 config.py
-cookies.json
 __pycache__/
+logs/
+data/
