@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def category_chunking(chunk_size: int = 5, file_path: str | Path | None = None):
     try:
         base = Path(__file__).parent
-        fp = Path(file_path) if file_path else base / 'data' / 'category_hrefs.json'
+        fp = Path(file_path) if file_path else base / 'categories' / 'category_hrefs.json'
 
         with fp.open('r', encoding='utf-8') as f:
             data = json.load(f)
@@ -123,7 +123,7 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
     screen_height = driver.execute_script("return window.screen.availHeight;")
     window_width = screen_width // 5
     window_height = screen_height // 2
-    position_x = thread_idx * window_width // 20
+    position_x = thread_idx * window_width  # thread_idx * window_width // 5
     position_y = 0
 
     driver.set_window_size(window_width, window_height)
@@ -136,11 +136,11 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
 
         cat_name = extract_category_name_from_url(cat)
         safe_name = sanitize_filename(cat_name)
-        out_dir = Path(__file__).parent / 'data'
+        out_dir = Path(__file__).parent / 'products'
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.debug(f"Không thể tạo thư mục data: {e}")
+            logger.debug(f"Không thể tạo thư mục products: {e}")
 
         out_file = out_dir / f"{safe_name}.json"
 
@@ -169,7 +169,7 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
             random_sleep()
             hover_element(driver, driver.find_element('tag name', 'body'))
             random_scroll(driver)
-            
+
         try:
             with out_file.open('w', encoding='utf-8') as f:
                 json.dump(products_all, f, ensure_ascii=False, indent=2)

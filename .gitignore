@@ -1,7 +1,7 @@
 Profile*/
-funcs/__pycache__/
 .github/
-config.py
 __pycache__/
-logs/
-data/
+config.py
+app.log
+cookies/*
+products/*
