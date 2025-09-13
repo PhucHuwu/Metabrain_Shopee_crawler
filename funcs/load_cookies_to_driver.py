@@ -17,7 +17,7 @@ def load_cookies_to_driver(driver, cookies_file: Optional[str] = None) -> int:
     Hàm luôn xử lý lỗi và không raise exception (Nguyên tắc NEVER CRASH).
     """
     # Lấy đường dẫn từ tham số hoặc config
-    path = cookies_file or getattr(config, "COOKIES_FILE_PATH", "data/cookies.json")
+    path = cookies_file or getattr(config, "COOKIES_FILE_PATH", "cookies/cookies.json")
 
     # Kiểm tra tồn tại file
     if not os.path.exists(path):
