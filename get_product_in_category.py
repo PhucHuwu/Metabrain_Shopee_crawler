@@ -123,7 +123,8 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
     screen_height = driver.execute_script("return window.screen.availHeight;")
     window_width = screen_width // 5
     window_height = screen_height // 2
-    position_x = thread_idx * window_width  # thread_idx * window_width // 5
+    position_x = thread_idx * window_width // 5
+    # position_x = thread_idx * window_width # for testing
     position_y = 0
 
     driver.set_window_size(window_width, window_height)
