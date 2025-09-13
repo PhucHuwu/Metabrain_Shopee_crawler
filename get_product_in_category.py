@@ -14,7 +14,7 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
-def category_chunking(chunk_size: int = 5, file_path: str | Path | None = None):
+def category_chunking(file_path: str | Path | None = None, num_threads: int | None = None):
     try:
         base = Path(__file__).parent
         fp = Path(file_path) if file_path else base / 'categories' / 'category_hrefs.json'
@@ -22,11 +22,38 @@ def category_chunking(chunk_size: int = 5, file_path: str | Path | None = None):
         with fp.open('r', encoding='utf-8') as f:
             data = json.load(f)
 
-        if isinstance(data, dict):
-            if 'category_hrefs' in data and isinstance(data['category_hrefs'], list):
-                categories = data['category_hrefs']
+        if isinstance(data, dict) and 'category_hrefs' in data and isinstance(data['category_hrefs'], list):
+            categories = data['category_hrefs']
+        else:
+            logger.error(f'Dữ liệu JSON không có định dạng mong đợi (dict with key "category_hrefs"): {fp}')
+            return []
 
-        return [categories[i:i + chunk_size] for i in range(0, len(categories), chunk_size)]
+        if not categories:
+            return []
+
+        if num_threads is not None:
+            try:
+                nt = int(num_threads)
+            except Exception:
+                logger.warning(f'num_threads không hợp lệ: {num_threads}')
+                nt = None
+
+            if nt is not None and nt > 0:
+                total = len(categories)
+                k, m = divmod(total, nt)
+                if k == 0:
+                    chunks = [[categories[i]] for i in range(total)]
+                    return chunks
+
+                chunks = []
+                start = 0
+                for i in range(nt):
+                    size = k + (1 if i < m else 0)
+                    if size <= 0:
+                        break
+                    chunks.append(categories[start:start + size])
+                    start += size
+                return chunks
 
     except FileNotFoundError:
         logger.error(f'Không tìm thấy file JSON: {fp}')
@@ -180,11 +207,13 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
 
 
 if __name__ == '__main__':
-    list_categories = category_chunking()
+    NUM_THREADS = 5
+    list_categories = category_chunking(num_threads=NUM_THREADS)
+
     threads = []
 
     for idx, cat in enumerate(list_categories):
-        thread = threading.Thread(target=get_product_in_category, args=(idx, cat, 1))
+        thread = threading.Thread(target=get_product_in_category, args=(idx, cat, 10))
         thread.start()
         time.sleep(1)
         threads.append(thread)
