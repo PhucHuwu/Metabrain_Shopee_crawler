@@ -18,7 +18,6 @@ def setup_driver(profile_idx: int = 0, headless: bool = False, user_data_base: s
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
     if headless:
         options.add_argument("--headless=new")
 
