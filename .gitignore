@@ -7,9 +7,8 @@ __pycache__/
 
 Profile_*/
 
-cookies/
-
-products/
+cookies/*.json
+products/*.json
 
 config.py
 app.log
