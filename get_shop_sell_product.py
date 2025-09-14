@@ -14,26 +14,71 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
-def products_chunking(chunk_size: int = 5, file_path: str | Path | None = None):
+def products_chunking(file_path: str | Path | None = None, num_threads: int | None = None):
     try:
         base = Path(__file__).parent
         products_dir = Path(file_path) if file_path else base / 'products'
 
         if not products_dir.exists() or not products_dir.is_dir():
-            logger.warning(f"Thư mục products không tồn tại: {products_dir}")
-            return [[] for _ in range(chunk_size)]
+            logger.error(f'Thư mục products không tồn tại: {products_dir}')
+            return []
 
-        all_files = sorted([str(p.resolve()) for p in products_dir.iterdir() if p.is_file() and p.suffix.lower() == '.json'])
+        json_files = sorted([p for p in products_dir.iterdir() if p.is_file() and p.suffix.lower() == '.json'])
+        if not json_files:
+            logger.warning(f'Không tìm thấy file json trong thư mục: {products_dir}')
+            return []
 
-        if not all_files:
-            return [[] for _ in range(chunk_size)]
+        file_groups: list[tuple[Path, list[str]]] = []
+        for fp in json_files:
+            try:
+                with fp.open('r', encoding='utf-8') as f:
+                    data = json.load(f)
 
-        chunks = [[] for _ in range(chunk_size)]
-        for idx, fp in enumerate(all_files):
-            chunks[idx % chunk_size].append(fp)
+                hrefs: list[str] = []
+                if isinstance(data, list):
+                    for item in data:
+                        try:
+                            if isinstance(item, dict) and 'href' in item:
+                                href = item.get('href')
+                                if href:
+                                    hrefs.append(href)
+                        except Exception:
+                            logger.debug(f'Lỗi khi đọc item trong {fp}')
+                else:
+                    logger.debug(f'File json không phải list, bỏ qua: {fp}')
+
+                if hrefs:
+                    file_groups.append((fp, hrefs))
+                else:
+                    logger.debug(f'Không tìm thấy href trong file: {fp}')
+            except Exception as e:
+                logger.exception(f'Lỗi khi đọc file products {fp}: {e}')
+
+        if not file_groups:
+            logger.warning('Không tìm thấy href nào trong các file products')
+            return []
+
+        if num_threads is None:
+            num_threads = 1
+
+        try:
+            nt = int(num_threads)
+            if nt <= 0:
+                nt = 1
+        except Exception:
+            nt = 1
+
+        chunks: list[list[Path]] = [[] for _ in range(nt)]
+        chunk_counts = [0] * nt
+
+        file_groups_sorted = sorted(file_groups, key=lambda x: len(x[1]), reverse=True)
+
+        for fp, hrefs in file_groups_sorted:
+            idx_min = int(min(range(nt), key=lambda i: chunk_counts[i]))
+            chunks[idx_min].append(fp)
+            chunk_counts[idx_min] += len(hrefs)
 
         return chunks
-
     except Exception as e:
         logger.exception(f'Lỗi không mong muốn trong products_chunking: {e}')
         return []
@@ -42,6 +87,31 @@ def products_chunking(chunk_size: int = 5, file_path: str | Path | None = None):
 def get_infor_shop(driver) -> list:
     # chưa làm gì cả
     return []
+
+
+def read_hrefs_from_file(fp: Path) -> tuple[str, list[str]]:
+    try:
+        with fp.open('r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        hrefs: list[str] = []
+        if isinstance(data, list):
+            for item in data:
+                try:
+                    if isinstance(item, dict) and 'href' in item:
+                        href = item.get('href')
+                        if href:
+                            hrefs.append(href)
+                except Exception:
+                    logger.debug(f'Lỗi khi đọc item trong {fp}')
+        else:
+            logger.debug(f'File json không phải list: {fp}')
+
+        category_name = fp.stem
+        return category_name, hrefs
+    except Exception as e:
+        logger.exception(f'Lỗi khi đọc file {fp}: {e}')
+        return fp.stem, []
 
 
 def get_shop_sell_product(thread_idx, products):
@@ -66,67 +136,42 @@ def get_shop_sell_product(thread_idx, products):
 
     driver.execute_script("document.body.style.zoom='100%'")
 
-    for product in products:
-        logger.info(f"[Thread {thread_idx}] Truy cập: {product}")
+    for fp in products:
+        category_name, hrefs = read_hrefs_from_file(Path(fp))
+        logger.info(f"[Thread {thread_idx}] Xử lý category '{category_name}' với {len(hrefs)} sản phẩm")
 
-        driver.get(product)
-        load_cookies_to_driver(driver)
-        time.sleep(3)
-        driver.refresh()
-        driver.execute_script("document.body.style.zoom='25%'")
+        for product in hrefs:
+            try:
+                driver.get(product)
+                load_cookies_to_driver(driver)
+                time.sleep(3)
+                driver.refresh()
+                driver.execute_script("document.body.style.zoom='25%'")
 
-        random_sleep()
-        hover_element(driver, driver.find_element('tag name', 'body'))
-        random_scroll(driver)
+                random_sleep()
+                hover_element(driver, driver.find_element('tag name', 'body'))
+                random_scroll(driver)
 
-        shops = get_infor_shop(driver)
-        logger.info(f"[Thread {thread_idx}] Lấy được {len(shops)} shop từ sản phẩm.")
+                shops = get_infor_shop(driver)
+                logger.info(f"[Thread {thread_idx}] Category '{category_name}' - Lấy được {len(shops)} shop từ sản phẩm.")
 
-        random_sleep()
-        hover_element(driver, driver.find_element('tag name', 'body'))
-        random_scroll(driver)
+                random_sleep()
+                hover_element(driver, driver.find_element('tag name', 'body'))
+                random_scroll(driver)
+            except Exception as e:
+                logger.exception(f"[Thread {thread_idx}] Lỗi khi xử lý sản phẩm {product}: {e}")
 
 
 if __name__ == '__main__':
     NUM_THREADS = 5
-
-    # Mỗi chunk là danh sách file json (đường dẫn)
-    list_product_chunks = products_chunking(chunk_size=NUM_THREADS)
+    list_products = products_chunking(num_threads=NUM_THREADS)
 
     threads = []
 
-    def read_products_from_files(file_paths: list[str]) -> list[str]:
-        """Đọc các file json và trả về danh sách URL sản phẩm (mỗi file có thể chứa list hoặc dict of products)."""
-        products = []
-        for fp in file_paths:
-            try:
-                with open(fp, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-
-                # Giả sử file chứa list sản phẩm hoặc dict với key products
-                if isinstance(data, list):
-                    products.extend([str(x) for x in data])
-                elif isinstance(data, dict):
-                    # nếu là dict có key products
-                    if 'products' in data and isinstance(data['products'], list):
-                        products.extend([str(x) for x in data['products']])
-                    else:
-                        # flatten values nếu có strings
-                        for v in data.values():
-                            if isinstance(v, str):
-                                products.append(v)
-            except Exception as e:
-                logger.warning(f"Không đọc được file {fp}: {e}")
-
-        return products
-
-    for idx, chunk_files in enumerate(list_product_chunks):
-        # Mỗi luồng sẽ nhận danh sách URL sản phẩm (có thể rỗng)
-        product_urls = read_products_from_files(chunk_files)
-
-        thread = threading.Thread(target=get_shop_sell_product, args=(idx, product_urls))
+    for idx, chunk_hrefs in enumerate(list_products):
+        thread = threading.Thread(target=get_shop_sell_product, args=(idx, chunk_hrefs))
         thread.start()
-        time.sleep(0.5)
+        time.sleep(1)
         threads.append(thread)
 
     for thread in threads:
