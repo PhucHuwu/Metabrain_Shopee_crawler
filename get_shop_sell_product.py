@@ -85,8 +85,193 @@ def products_chunking(file_path: str | Path | None = None, num_threads: int | No
 
 
 def get_infor_shop(driver) -> list:
-    # chưa làm gì cả
-    return []
+    try:
+        shops: list[dict] = []
+
+        section = None
+        try:
+            section = driver.find_element('css selector', 'section.page-product__shop')
+        except Exception:
+            section = None
+
+        shop_href = ''
+        shop_name = ''
+
+        try:
+            if section is not None:
+                try:
+                    anchor = section.find_element('xpath', ".//a[@href][1]")
+                except Exception:
+                    anchor = None
+            else:
+                try:
+                    anchor = driver.find_element('xpath', "//a[@href][1]")
+                except Exception:
+                    anchor = None
+
+            if anchor is not None:
+                try:
+                    href = anchor.get_attribute('href') or ''
+                    shop_href = href.strip()
+                except Exception:
+                    shop_href = ''
+        except Exception:
+            shop_href = ''
+
+        try:
+            candidates = []
+            if section is not None:
+                elems = section.find_elements('xpath', ".//*[self::div or self::span or self::h1 or self::h2 or self::p][normalize-space()]")
+            else:
+                elems = driver.find_elements('xpath', "//*[self::div or self::span or self::h1 or self::h2 or self::p][normalize-space()]")
+
+            for el in elems:
+                try:
+                    txt = el.text.strip()
+                    if not txt:
+                        continue
+                    low = txt.lower()
+                    if any(k in low for k in ('chat ngay', 'xem shop', 'online', 'đánh giá', 'tỉ lệ phản hồi', 'tham gia', 'sản phẩm', 'thời gian phản hồi', 'người theo dõi')):
+                        continue
+                    if len(txt) < 3:
+                        continue
+                    if re.fullmatch(r'[\d,\.\s]+', txt):
+                        continue
+                    candidates.append(txt)
+                except Exception:
+                    continue
+
+            if candidates:
+                shop_name = candidates[0]
+        except Exception:
+            shop_name = ''
+
+        if not shop_name and 'anchor' in locals() and anchor is not None:
+            try:
+                txt = anchor.text.strip()
+                if txt and len(txt) > 0:
+                    shop_name = txt
+            except Exception:
+                pass
+
+        try:
+            if shop_href and shop_href.startswith('/'):
+                current_url = driver.current_url or ''
+                parsed = urllib.parse.urlparse(current_url)
+                origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ''
+                if origin:
+                    shop_href = urllib.parse.urljoin(origin, shop_href)
+        except Exception:
+            pass
+
+        shop_id = ''
+        try:
+            if shop_href:
+                parsed = urllib.parse.urlparse(shop_href)
+                path = parsed.path or ''
+                if path:
+                    shop_id = path.strip('/').split('/')[-1]
+                if not shop_id and parsed.query:
+                    q = urllib.parse.parse_qs(parsed.query)
+                    for key in ('shopid', 'shopId', 'sellerId'):
+                        if key in q and q[key]:
+                            shop_id = q[key][0]
+                            break
+        except Exception:
+            shop_id = ''
+
+        shop_name = shop_name or ''
+        shop_href = shop_href or ''
+        shop_id = shop_id or ''
+
+        if shop_name or shop_href:
+            shops.append({
+                'shop_name': shop_name,
+                'shop_href': shop_href,
+                'shop_id': shop_id,
+            })
+
+        return shops
+    except Exception as e:
+        logger.exception(f'Lỗi trong get_infor_shop: {e}')
+        return []
+
+
+def _ensure_shops_dir():
+    try:
+        base = Path(__file__).parent
+        shops_dir = base / 'shops'
+        if not shops_dir.exists():
+            shops_dir.mkdir(parents=True, exist_ok=True)
+        return shops_dir
+    except Exception as e:
+        logger.exception(f'Không thể tạo thư mục shops: {e}')
+        return None
+
+
+def save_shops_for_category(category_name: str, shops: list[dict]):
+    try:
+        shops_dir = _ensure_shops_dir()
+        if shops_dir is None:
+            return False
+
+        safe_name = re.sub(r"[^0-9a-zA-Z_\-\u00C0-\u024F ]+", '', category_name).strip() or category_name
+        out_file = shops_dir / f"{safe_name}.json"
+
+        existing: list[dict] = []
+        if out_file.exists():
+            try:
+                with out_file.open('r', encoding='utf-8') as f:
+                    existing = json.load(f) or []
+            except Exception:
+                existing = []
+
+        seen = set()
+        merged: list[dict] = []
+
+        def key_of(item: dict) -> str:
+            """Tạo khóa duy nhất chuẩn hóa.
+
+            Ưu tiên use shop_id (nếu có và không rỗng), sau đó shop_href, rồi shop_name.
+            Chuẩn hóa bằng strip và lowercase để tránh khác biệt do khoảng trắng/viết hoa.
+            """
+            try:
+                sid = item.get('shop_id') or ''
+                href = item.get('shop_href') or ''
+                name = item.get('shop_name') or ''
+
+                sid = str(sid).strip()
+                href = str(href).strip().lower()
+                name = str(name).strip().lower()
+
+                if sid:
+                    return f"id:{sid}"
+                if href:
+                    return f"href:{href}"
+                return f"name:{name}"
+            except Exception:
+                return ''
+
+        for item in existing + shops:
+            try:
+                k = key_of(item) or ''
+                if not k:
+                    k = (item.get('shop_name', '') + '|' + item.get('shop_href', '')).strip()
+                if k in seen:
+                    continue
+                seen.add(k)
+                merged.append(item)
+            except Exception:
+                continue
+
+        with out_file.open('w', encoding='utf-8') as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
+
+        logger.info(f'Đã lưu {len(shops)} shop vào {out_file} (tổng {len(merged)})')
+        return True
+    except Exception as e:
+        logger.exception(f'Lỗi khi lưu shops cho category {category_name}: {e}')
+        return False
 
 
 def read_hrefs_from_file(fp: Path) -> tuple[str, list[str]]:
@@ -127,8 +312,8 @@ def get_shop_sell_product(thread_idx, products):
     screen_height = driver.execute_script("return window.screen.availHeight;")
     window_width = screen_width // 5
     window_height = screen_height // 2
-    position_x = thread_idx * window_width // 5
-    # position_x = thread_idx * window_width # for testing
+    # position_x = thread_idx * window_width // 5
+    position_x = thread_idx * window_width  # for testing
     position_y = 0
 
     driver.set_window_size(window_width, window_height)
@@ -154,6 +339,12 @@ def get_shop_sell_product(thread_idx, products):
 
                 shops = get_infor_shop(driver)
                 logger.info(f"[Thread {thread_idx}] Category '{category_name}' - Lấy được {len(shops)} shop từ sản phẩm.")
+
+                try:
+                    if shops:
+                        save_shops_for_category(category_name, shops)
+                except Exception as e:
+                    logger.exception(f"[Thread {thread_idx}] Lỗi khi lưu shops cho category {category_name}: {e}")
 
                 random_sleep()
                 hover_element(driver, driver.find_element('tag name', 'body'))
