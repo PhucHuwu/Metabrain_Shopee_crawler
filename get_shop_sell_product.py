@@ -230,11 +230,6 @@ def save_shops_for_category(category_name: str, shops: list[dict]):
         merged: list[dict] = []
 
         def key_of(item: dict) -> str:
-            """Tạo khóa duy nhất chuẩn hóa.
-
-            Ưu tiên use shop_id (nếu có và không rỗng), sau đó shop_href, rồi shop_name.
-            Chuẩn hóa bằng strip và lowercase để tránh khác biệt do khoảng trắng/viết hoa.
-            """
             try:
                 sid = item.get('shop_id') or ''
                 href = item.get('shop_href') or ''
