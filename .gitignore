@@ -1,29 +1,21 @@
-# Git ignore rules for the project
-# Ignore the application log file but keep the logs folder with .gitkeep
 logs/app.log
 
-# Byte-compiled / cache files
+.github
+
 __pycache__/
 *.py[cod]
 
-# Profiles and driver data
 Profile_*/
 
-# Cookies and temporary files
 cookies/
 
-# Ignore products output files
 products/
 
-# Hide config and local app log
 config.py
 app.log
 
-# Allow keeping empty directories with .gitkeep even if folder is ignored
 !.gitkeep
 
-# Explicitly allow .gitkeep inside ignored dirs
 !logs/.gitkeep
 !cookies/.gitkeep
 !products/.gitkeep
-## Do not allow .gitkeep in Profile_* - profile directories should be fully ignored
