@@ -1,20 +1,21 @@
-# Git ignore rules for the project
-# Ignore the application log file but keep the logs folder with .gitkeep
 logs/app.log
 
-# Byte-compiled / cache files
+.github
+
 __pycache__/
 *.py[cod]
 
-# Profiles and driver data
 Profile_*/
 
-# Cookies and temporary files
 cookies/
-Profile*/
-.github/
-__pycache__/
+
+products/
+
 config.py
 app.log
-cookies/*
-products/*
+
+!.gitkeep
+
+!logs/.gitkeep
+!cookies/.gitkeep
+!products/.gitkeep
