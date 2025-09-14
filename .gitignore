@@ -9,6 +9,7 @@ Profile_*/
 
 cookies/*.json
 products/*.json
+shops/*.json
 
 config.py
 app.log
