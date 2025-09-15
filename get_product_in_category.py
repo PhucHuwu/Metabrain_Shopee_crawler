@@ -104,7 +104,7 @@ def get_infor_product(driver) -> list:
                 except Exception:
                     name = ''
 
-            results.append({'href': href, 'name': name})
+            results.append({'href': href, 'name': name, 'status': 0})
         except Exception as e:
             logger.debug(f"Lỗi khi xử lý 1 product anchor: {e}")
             continue
