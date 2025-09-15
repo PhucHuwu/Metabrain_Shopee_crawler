@@ -1,10 +1,10 @@
 from pathlib import Path
-import json
 import logging
 import threading
 import time
 import re
 import urllib.parse
+import csv
 
 try:
     import config
@@ -17,15 +17,23 @@ logger = logging.getLogger(__name__)
 def category_chunking(file_path: str | Path | None = None, num_threads: int | None = None):
     try:
         base = Path(__file__).parent
-        fp = Path(file_path) if file_path else base / 'categories' / 'category_hrefs.json'
-
-        with fp.open('r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        if isinstance(data, dict) and 'category_hrefs' in data and isinstance(data['category_hrefs'], list):
-            categories = data['category_hrefs']
+        # Xác định file CSV: dùng file_path nếu có, hoặc mặc định tới categories/category_hrefs.csv
+        if file_path:
+            fp = Path(file_path)
         else:
-            logger.error(f'Dữ liệu JSON không có định dạng mong đợi (dict with key "category_hrefs"): {fp}')
+            fp = base / 'categories' / 'category_hrefs.csv'
+
+        categories = []
+        try:
+            with fp.open('r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                rows = [r for r in reader]
+
+            # Bỏ header (dòng đầu)
+            data_rows = rows[1:]
+            categories = [r[0].strip() for r in data_rows if r and r[0].strip()]
+        except Exception as e:
+            logger.exception(f'Lỗi khi đọc CSV cố định {fp}: {e}')
             return []
 
         if not categories:
@@ -56,7 +64,7 @@ def category_chunking(file_path: str | Path | None = None, num_threads: int | No
                 return chunks
 
     except FileNotFoundError:
-        logger.error(f'Không tìm thấy file JSON: {fp}')
+        logger.error(f'Không tìm thấy file: {fp}')
         return []
     except Exception as e:
         logger.exception(f'Lỗi không mong muốn trong category_chunking: {e}')
@@ -157,8 +165,12 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
     driver.set_window_size(window_width, window_height)
     driver.set_window_position(position_x, position_y)
 
-    driver.execute_script("document.body.style.zoom='100%'")
-
+    driver.get("https://shopee.vn/mall")
+    driver.execute_script("document.body.style.zoom='25%'")
+    load_cookies_to_driver(driver)
+    time.sleep(3)
+    driver.refresh()
+    
     for cat in categories:
         logger.info(f"[Thread {thread_idx}] Bắt đầu lấy sản phẩm trong category: {cat}")
 
@@ -176,10 +188,8 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
 
         for i in range(1, page_num + 1):
             driver.get(f"{cat}/popular?pageNumber={i}")
-            load_cookies_to_driver(driver)
-            time.sleep(3)
-            driver.refresh()
             driver.execute_script("document.body.style.zoom='25%'")
+            time.sleep(3)
 
             random_sleep()
             hover_element(driver, driver.find_element('tag name', 'body'))
@@ -199,21 +209,33 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
             random_scroll(driver)
 
         try:
-            with out_file.open('w', encoding='utf-8') as f:
-                json.dump(products_all, f, ensure_ascii=False, indent=2)
-            logger.info(f"[Thread {thread_idx}] Đã lưu {len(products_all)} products vào {out_file}")
+            with out_file.with_suffix('.csv').open('w', encoding='utf-8-sig', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=['href', 'name', 'status'])
+                writer.writeheader()
+                for p in products_all:
+                    try:
+                        row = {
+                            'href': p.get('href', ''),
+                            'name': p.get('name', ''),
+                            'status': p.get('status', 0)
+                        }
+                        writer.writerow(row)
+                    except Exception as e:
+                        logger.debug(f"Lỗi khi ghi 1 dòng CSV: {e}")
+
+            logger.info(f"[Thread {thread_idx}] Đã lưu {len(products_all)} products vào {out_file.with_suffix('.csv')}")
         except Exception as e:
-            logger.exception(f"Lỗi khi lưu file {out_file}: {e}")
+            logger.exception(f"Lỗi khi lưu file CSV {out_file.with_suffix('.csv')}: {e}")
 
 
 if __name__ == '__main__':
-    NUM_THREADS = 5
+    NUM_THREADS = 8
     list_categories = category_chunking(num_threads=NUM_THREADS)
 
     threads = []
 
     for idx, cat in enumerate(list_categories):
-        thread = threading.Thread(target=get_product_in_category, args=(idx, cat, 10))
+        thread = threading.Thread(target=get_product_in_category, args=(idx, cat, 9))
         thread.start()
         time.sleep(1)
         threads.append(thread)

@@ -8,8 +8,8 @@ __pycache__/
 Profile_*/
 
 cookies/*.json
-products/*.json
-shops/*.json
+products/*.csv
+shops/*.csv
 
 config.py
 app.log
