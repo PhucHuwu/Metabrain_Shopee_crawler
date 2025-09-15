@@ -30,7 +30,7 @@ def random_sleep(min_s: float = 1.0, max_s: float = 4.0, jitter: float = 0.5,
         return 0.0
 
 
-def hover_element(driver, element, max_offset: int = 15, moves: int = 3,
+def hover_element(driver, element, max_offset: int = 15, moves: int = random.randint(5, 20),
                   pause_min: float = 0.05, pause_max: float = 0.25,
                   rng: Optional[random.Random] = None) -> bool:
     """Di chuột qua element với vài chuyển động nhỏ để mô phỏng người dùng.

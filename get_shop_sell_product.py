@@ -314,7 +314,11 @@ def get_shop_sell_product(thread_idx, products):
     driver.set_window_size(window_width, window_height)
     driver.set_window_position(position_x, position_y)
 
-    driver.execute_script("document.body.style.zoom='100%'")
+    driver.get("https://shopee.vn/mall")
+    driver.execute_script("document.body.style.zoom='25%'")
+    load_cookies_to_driver(driver)
+    time.sleep(3)
+    driver.refresh()
 
     for fp in products:
         category_name, hrefs = read_hrefs_from_file(Path(fp))
@@ -323,10 +327,8 @@ def get_shop_sell_product(thread_idx, products):
         for product in hrefs:
             try:
                 driver.get(product)
-                load_cookies_to_driver(driver)
-                time.sleep(3)
-                driver.refresh()
                 driver.execute_script("document.body.style.zoom='25%'")
+                time.sleep(3)
 
                 random_sleep()
                 hover_element(driver, driver.find_element('tag name', 'body'))
