@@ -8,7 +8,7 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def load_cookies_to_driver(driver, cookies_file: Optional[str] = None) -> int:
+def load_cookies_to_driver(driver, cookies_file: Optional[str] = None, type: str = "shopee") -> int:
     """Tải cookie từ file JSON vào driver Selenium.
 
     - cookies_file: đường dẫn tới file cookie. Nếu None, sẽ lấy `config.COOKIES_FILE_PATH`.
@@ -17,7 +17,7 @@ def load_cookies_to_driver(driver, cookies_file: Optional[str] = None) -> int:
     Hàm luôn xử lý lỗi và không raise exception (Nguyên tắc NEVER CRASH).
     """
     # Lấy đường dẫn từ tham số hoặc config
-    path = cookies_file or getattr(config, "COOKIES_FILE_PATH", "cookies/cookies.json")
+    path = cookies_file or getattr(config, "COOKIES_FILE_PATH", f"cookies/{type}_cookies.json")
 
     # Kiểm tra tồn tại file
     if not os.path.exists(path):

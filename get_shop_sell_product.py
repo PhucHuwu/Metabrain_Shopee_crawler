@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 import logging
 import threading
 import time
@@ -23,29 +24,26 @@ def products_chunking(file_path: str | Path | None = None, num_threads: int | No
             logger.error(f'Thư mục products không tồn tại: {products_dir}')
             return []
 
-        json_files = sorted([p for p in products_dir.iterdir() if p.is_file() and p.suffix.lower() == '.json'])
-        if not json_files:
-            logger.warning(f'Không tìm thấy file json trong thư mục: {products_dir}')
+        csv_files = sorted([p for p in products_dir.iterdir() if p.is_file() and p.suffix.lower() == '.csv'])
+        if not csv_files:
+            logger.warning(f'Không tìm thấy file csv trong thư mục: {products_dir}')
             return []
 
-        file_groups: list[tuple[Path, list[str]]] = []
-        for fp in json_files:
-            try:
-                with fp.open('r', encoding='utf-8') as f:
-                    data = json.load(f)
+        import csv
 
+        file_groups: list[tuple[Path, list[str]]] = []
+        for fp in csv_files:
+            try:
                 hrefs: list[str] = []
-                if isinstance(data, list):
-                    for item in data:
+                with fp.open('r', encoding='utf-8-sig', newline='') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
                         try:
-                            if isinstance(item, dict) and 'href' in item:
-                                href = item.get('href')
-                                if href:
-                                    hrefs.append(href)
+                            href = (row.get('href') or '').strip()
+                            if href:
+                                hrefs.append(href)
                         except Exception:
-                            logger.debug(f'Lỗi khi đọc item trong {fp}')
-                else:
-                    logger.debug(f'File json không phải list, bỏ qua: {fp}')
+                            logger.debug(f'Lỗi khi đọc dòng trong {fp}')
 
                 if hrefs:
                     file_groups.append((fp, hrefs))
@@ -214,17 +212,44 @@ def save_shops_for_category(category_name: str, shops: list[dict]):
         shops_dir = _ensure_shops_dir()
         if shops_dir is None:
             return False
-
         safe_name = re.sub(r"[^0-9a-zA-Z_\-\u00C0-\u024F ]+", '', category_name).strip() or category_name
-        out_file = shops_dir / f"{safe_name}.json"
+        out_file_json = shops_dir / f"{safe_name}.json"
+        out_file_csv = shops_dir / f"{safe_name}.csv"
 
+        # Đọc existing shops: ưu tiên CSV, fallback JSON cũ nếu có
         existing: list[dict] = []
-        if out_file.exists():
-            try:
-                with out_file.open('r', encoding='utf-8') as f:
-                    existing = json.load(f) or []
-            except Exception:
-                existing = []
+        try:
+            import csv
+
+            if out_file_csv.exists():
+                with out_file_csv.open('r', encoding='utf-8-sig', newline='') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        try:
+                            existing.append({
+                                'shop_id': (row.get('shop_id') or '').strip(),
+                                'shop_name': (row.get('shop_name') or '').strip(),
+                                'shop_href': (row.get('shop_href') or '').strip(),
+                            })
+                        except Exception:
+                            continue
+            elif out_file_json.exists():
+                try:
+                    with out_file_json.open('r', encoding='utf-8') as f:
+                        js = json.load(f) or []
+                    for item in js:
+                        try:
+                            existing.append({
+                                'shop_id': str(item.get('shop_id') or '').strip(),
+                                'shop_name': str(item.get('shop_name') or '').strip(),
+                                'shop_href': str(item.get('shop_href') or '').strip(),
+                            })
+                        except Exception:
+                            continue
+                except Exception:
+                    existing = []
+        except Exception:
+            existing = []
 
         seen = set()
         merged: list[dict] = []
@@ -259,36 +284,54 @@ def save_shops_for_category(category_name: str, shops: list[dict]):
             except Exception:
                 continue
 
-        with out_file.open('w', encoding='utf-8') as f:
-            json.dump(merged, f, ensure_ascii=False, indent=2)
+        # Ghi ra CSV với header: shop_id, shop_name, shop_href
+        try:
+            import csv
+            with out_file_csv.open('w', encoding='utf-8-sig', newline='') as f:
+                fieldnames = ['shop_id', 'shop_name', 'shop_href']
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for item in merged:
+                    try:
+                        writer.writerow({
+                            'shop_id': item.get('shop_id', ''),
+                            'shop_name': item.get('shop_name', ''),
+                            'shop_href': item.get('shop_href', ''),
+                        })
+                    except Exception:
+                        continue
+        except Exception as e:
+            logger.exception(f'Lỗi khi ghi file CSV shops cho category {category_name}: {e}')
+            return False
 
-        logger.info(f'Đã lưu {len(shops)} shop vào {out_file} (tổng {len(merged)})')
+        logger.info(f'Đã lưu {len(shops)} shop vào {out_file_csv} (tổng {len(merged)})')
         return True
     except Exception as e:
         logger.exception(f'Lỗi khi lưu shops cho category {category_name}: {e}')
         return False
 
 
-def read_hrefs_from_file(fp: Path) -> tuple[str, list[str]]:
+def read_hrefs_from_file(fp: Path) -> tuple[str, list[dict]]:
     try:
-        with fp.open('r', encoding='utf-8') as f:
-            data = json.load(f)
+        import csv
 
-        hrefs: list[str] = []
-        if isinstance(data, list):
-            for item in data:
-                try:
-                    if isinstance(item, dict) and 'href' in item:
-                        href = item.get('href')
-                        if href:
-                            hrefs.append(href)
-                except Exception:
-                    logger.debug(f'Lỗi khi đọc item trong {fp}')
-        else:
-            logger.debug(f'File json không phải list: {fp}')
+        rows: list[dict] = []
+        try:
+            with fp.open('r', encoding='utf-8-sig', newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        href = (row.get('href') or '').strip()
+                        name = (row.get('name') or '').strip()
+                        status = str(row.get('status') or '0').strip()
+                        rows.append({'href': href, 'name': name, 'status': status})
+                    except Exception:
+                        logger.debug(f'Lỗi khi đọc dòng trong {fp}')
+        except Exception as e:
+            logger.exception(f'Lỗi khi đọc CSV {fp}: {e}')
 
         category_name = fp.stem
-        return category_name, hrefs
+        return category_name, rows
     except Exception as e:
         logger.exception(f'Lỗi khi đọc file {fp}: {e}')
         return fp.stem, []
@@ -320,13 +363,30 @@ def get_shop_sell_product(thread_idx, products):
     time.sleep(3)
     driver.refresh()
 
-    for fp in products:
-        category_name, hrefs = read_hrefs_from_file(Path(fp))
-        logger.info(f"[Thread {thread_idx}] Xử lý category '{category_name}' với {len(hrefs)} sản phẩm")
+    import csv
 
-        for product in hrefs:
+    for fp in products:
+        category_name, rows = read_hrefs_from_file(Path(fp))
+        logger.info(f"[Thread {thread_idx}] Xử lý category '{category_name}' với {len(rows)} sản phẩm")
+
+        # nếu không có rows thì tiếp
+        if not rows:
+            continue
+
+        # đường dẫn file CSV để cập nhật trạng thái
+        csv_path = Path(fp)
+
+        for idx, item in enumerate(rows):
+            href = item.get('href') or ''
+            name = item.get('name') or ''
+            status = str(item.get('status') or '0').strip()
+
+            # chỉ xử lý nếu status == '0' (chưa xử lý)
+            if status != '0':
+                continue
+
             try:
-                driver.get(product)
+                driver.get(href)
                 driver.execute_script("document.body.style.zoom='25%'")
                 time.sleep(3)
 
@@ -335,7 +395,33 @@ def get_shop_sell_product(thread_idx, products):
                 random_scroll(driver)
 
                 shops = get_infor_shop(driver)
-                logger.info(f"[Thread {thread_idx}] Category '{category_name}' - Lấy được {len(shops)} shop từ sản phẩm.")
+                logger.info(f"[Thread {thread_idx}] Category '{category_name}' - Lấy được {len(shops)} shop từ sản phẩm '{href}'.")
+
+                # nếu phát hiện shop trả về thông báo lỗi tải (cookie hết hạn / session dead)
+                if shops:
+                    # kiểm tra nếu shop name chính xác bằng chuỗi lỗi tải
+                    for s in shops:
+                        try:
+                            shop_name = s.get('shop_name', '') or ''
+                            if {shop_name == "Cần trợ giúp?\nLỗi tải\nXin lỗi, chúng tôi đang gặp sự cố tải, bạn vui lòng thử lại nhé.\nThử Lại" or
+                                shop_name == ",\"Bạn cần giúp đỡ?\nTrang không khả dụng\nTài khoản của bạn đã bị giới hạn tạm thời vì tần suất truy cập bất thường và có thể bị khóa vĩnh viễn nếu lặp lại hoạt động này. Vui lòng liên hệ bộ phận CSKH Shopee nếu cần hỗ trợ thêm.\nTrở về trang chủ\nID: 984cc4d41fa-2fc1-4268-9cec-e390712a5407\",https://shopee.vn/"}:
+                                # in nội dung cookies nếu có và dừng process
+                                cookies_file = Path(__file__).parent / 'cookies' / 'cookies.json'
+                                try:
+                                    if cookies_file.exists():
+                                        with cookies_file.open('r', encoding='utf-8') as cf:
+                                            content = cf.read()
+                                        logger.error('Phát hiện cookies có vẻ hết hạn. Nội dung cookies:')
+                                        print(content)
+                                    else:
+                                        logger.error('Phát hiện cookies có vẻ hết hạn nhưng file cookies không tồn tại.')
+                                except Exception as e:
+                                    logger.exception(f'Không thể đọc file cookies: {e}')
+                                # dừng toàn bộ chương trình
+                                logger.error('Dừng tiến trình do phát hiện trang báo lỗi tải (cookie/session có vấn đề).')
+                                os._exit(0)
+                        except Exception:
+                            continue
 
                 try:
                     if shops:
@@ -343,11 +429,27 @@ def get_shop_sell_product(thread_idx, products):
                 except Exception as e:
                     logger.exception(f"[Thread {thread_idx}] Lỗi khi lưu shops cho category {category_name}: {e}")
 
+                # sau khi xử lý thành công sản phẩm, cập nhật status = '1' và ghi lại CSV
+                try:
+                    rows[idx]['status'] = '1'
+                    # ghi lại toàn bộ file CSV
+                    with csv_path.open('w', encoding='utf-8-sig', newline='') as f:
+                        fieldnames = ['href', 'name', 'status']
+                        writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        writer.writeheader()
+                        for r in rows:
+                            try:
+                                writer.writerow({'href': r.get('href', ''), 'name': r.get('name', ''), 'status': r.get('status', '0')})
+                            except Exception:
+                                logger.debug('Lỗi khi ghi 1 dòng CSV khi cập nhật status')
+                except Exception as e:
+                    logger.exception(f"[Thread {thread_idx}] Lỗi khi cập nhật status cho sản phẩm {href}: {e}")
+
                 random_sleep()
                 hover_element(driver, driver.find_element('tag name', 'body'))
                 random_scroll(driver)
             except Exception as e:
-                logger.exception(f"[Thread {thread_idx}] Lỗi khi xử lý sản phẩm {product}: {e}")
+                logger.exception(f"[Thread {thread_idx}] Lỗi khi xử lý sản phẩm {href}: {e}")
 
 
 if __name__ == '__main__':

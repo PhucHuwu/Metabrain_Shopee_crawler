@@ -229,7 +229,7 @@ def get_product_in_category(thread_idx, categories, page_num: int = 5):
 
 
 if __name__ == '__main__':
-    NUM_THREADS = 8
+    NUM_THREADS = 5
     list_categories = category_chunking(num_threads=NUM_THREADS)
 
     threads = []
