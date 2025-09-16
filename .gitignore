@@ -10,6 +10,7 @@ Profile_*/
 cookies/*.json
 products/*.csv
 shops/*.csv
+ggmap_search/*.csv
 
 config.py
 app.log
