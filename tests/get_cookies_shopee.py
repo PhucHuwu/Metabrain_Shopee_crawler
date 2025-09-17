@@ -1,8 +1,8 @@
-import undetected_chromedriver as uc
 import time
 import threading
-import os
 import logging
+import os
+import sys
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -10,34 +10,44 @@ logger = logging.getLogger(__name__)
 driver_lock = threading.Lock()
 
 
-def setup_driver(idx):
-    options = uc.ChromeOptions()
-    profile_directory = f"Profile_{idx}"
+def main(thread_idx):
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
 
-    if not os.path.exists(profile_directory):
-        os.makedirs(profile_directory)
+    from funcs.setup_driver import setup_driver
 
-    options.user_data_dir = profile_directory
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
+    driver = None
+    while driver is None:
+        driver = setup_driver(profile_idx=thread_idx)
 
-    try:
-        with driver_lock:
-            driver = uc.Chrome(options=options)
-            driver.set_page_load_timeout(30)
-            driver.implicitly_wait(10)
-        return driver
-    except Exception as e:
-        logger.error(f"Khong the khoi tao driver {idx}: {e}")
-        time.sleep(180)
-        return None
+    screen_width = driver.execute_script("return window.screen.availWidth;")
+    screen_height = driver.execute_script("return window.screen.availHeight;")
+    window_width = screen_width // 5
+    window_height = screen_height // 2
+    # position_x = thread_idx * window_width // 5
+    position_x = thread_idx * window_width  # for testing
+    position_y = 0
+
+    driver.set_window_size(window_width, window_height)
+    driver.set_window_position(position_x, position_y)
+
+    driver.get("https://shopee.vn/mall")
+    driver.execute_script("document.body.style.zoom='25%'")
+    
+    if input() == 'q':
+        return
 
 
-if __name__ == "__main__":
-    driver = setup_driver(0)
-    if driver:
-        driver.get("https://shopee.vn/mall/")
-        if input() == "ok":
-            driver.quit()
+NUM_THREADS = 5
+
+threads = []
+
+for idx in range(NUM_THREADS):
+    thread = threading.Thread(target=main, args=(idx,))
+    thread.start()
+    time.sleep(1)
+    threads.append(thread)
+
+for thread in threads:
+    thread.join()
