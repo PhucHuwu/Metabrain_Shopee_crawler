@@ -39,7 +39,7 @@ def main(thread_idx):
         return
 
 
-NUM_THREADS = 5
+NUM_THREADS = 1
 
 threads = []
 
