@@ -65,14 +65,8 @@ def get_product_in_category(thread_idx, shops):
 
     driver.get("https://www.google.com/maps")
     driver.execute_script("document.body.style.zoom='25%'")
-    load_cookies_to_driver(driver, type="ggmap")
-    # mô phỏng hành vi người dùng sau khi load page
-    try:
-        random_sleep(1.0, 2.0)
-        random_scroll(driver, min_scrolls=2, max_scrolls=6)
-    except Exception:
-        pass
-    time.sleep(1)
+    load_cookies_to_driver(driver, type='ggmap')
+    time.sleep(3)
     driver.refresh()
 
     def read_shop_names_from_csv(path):
@@ -99,24 +93,18 @@ def get_product_in_category(thread_idx, shops):
         for shop_name in shop_names:
             try:
                 driver.get("https://www.google.com/maps")
+                driver.execute_script("document.body.style.zoom='25%'")
+                time.sleep(3)
 
                 try:
                     searchbox = driver.find_element('id', 'searchbox')
 
                     if searchbox:
+                        hover_element(driver, searchbox)
+
+                        clicked = False
                         try:
-                            # hover vào ô tìm kiếm trước khi click
-                            try:
-                                hover_element(driver, searchbox)
-                            except Exception:
-                                pass
-
-                            clicked = False
-                            try:
-                                clicked = auto_click(driver, "//*[@id='searchbox']", 5, retries=2, log_callback=logger.info)
-                            except Exception:
-                                clicked = False
-
+                            clicked = auto_click(driver, "//*[@id='searchbox']", 5, retries=2, log_callback=logger.info)
                         except Exception:
                             clicked = False
 
@@ -131,7 +119,6 @@ def get_product_in_category(thread_idx, shops):
                                 from selenium.webdriver import ActionChains
                                 ac = ActionChains(driver)
                                 ac.click(searchbox)
-                                # mô phỏng gõ từng ký tự có delay
                                 for ch in shop_name:
                                     ac.send_keys(ch)
                                 ac.send_keys('\ue007')
@@ -149,20 +136,14 @@ def get_product_in_category(thread_idx, shops):
                 logger.error(f"Lỗi khi xử lý shop '{shop_name}': {e}")
                 continue
 
-            # Chờ kết quả load và trích xuất tối đa 5 href gần nhất
             try:
-                # mô phỏng tương tác người dùng trước khi lấy page_source
-                try:
-                    random_sleep(0.8, 1.6)
-                    random_scroll(driver, min_scrolls=1, max_scrolls=4)
-                except Exception:
-                    pass
+                random_sleep()
+                hover_element(driver, driver.find_element('tag name', 'body'))
+                random_scroll(driver)
 
-                time.sleep(1)
                 page_source = driver.page_source
                 results = parse_ggmap_results(page_source, max_items=5)
 
-                # Lưu kết quả vào thư mục ggmap_search theo category (dùng shop_csv tên file làm category)
                 category_name = Path(shop_csv).stem
                 save_ggmap_results(category_name, shop_name, results)
 
@@ -177,15 +158,7 @@ def get_product_in_category(thread_idx, shops):
 
 
 def parse_ggmap_results(page_source: str, max_items: int = 5) -> list[dict]:
-    """Parse page_source của Google Maps và trả về list các dict {name, href} tối đa max_items
-
-    Trả về rỗng khi không tìm được. Không raise exception.
-    """
-    try:
-        from bs4 import BeautifulSoup
-    except Exception:
-        logger.error("BeautifulSoup không được cài đặt. Hãy cài bằng 'pip install beautifulsoup4'")
-        return []
+    from bs4 import BeautifulSoup
 
     try:
         soup = BeautifulSoup(page_source, 'html.parser')
@@ -247,10 +220,6 @@ def parse_ggmap_results(page_source: str, max_items: int = 5) -> list[dict]:
 
 
 def save_ggmap_results(category: str, query_name: str, results: list[dict]):
-    """Lưu kết quả vào ggmap_search/{category}.csv với 2 cột: shop_name, list_href (JSON/semicolon separated)
-
-    Nếu thư mục không tồn tại thì tạo.
-    """
     try:
         out_dir = Path('ggmap_search')
         out_dir.mkdir(parents=True, exist_ok=True)

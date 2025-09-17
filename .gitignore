@@ -11,12 +11,8 @@ cookies/*.json
 products/*.csv
 shops/*.csv
 ggmap_search/*.csv
+shop_info/*.csv
 
 config.py
 app.log
 
-!.gitkeep
-
-!logs/.gitkeep
-!cookies/.gitkeep
-!products/.gitkeep
