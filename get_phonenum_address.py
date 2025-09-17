@@ -67,7 +67,6 @@ def get_phonenum_adress(thread_idx, mapsearch):
     load_cookies_to_driver(driver, type='ggmap')
     time.sleep(3)
     driver.refresh()
-    # Tải mapping tên shop từ thư mục shops/ để ưu tiên tên chính thức
     shops_map = load_shops_mapping()
 
     for csv_file in mapsearch:
@@ -90,8 +89,6 @@ def get_phonenum_adress(thread_idx, mapsearch):
                         driver.get(href)
                         driver.execute_script("document.body.style.zoom='25%'")
                         time.sleep(3)
-                        # Sau khi load trang, trích xuất tên shop, số điện thoại và địa chỉ
-                        # Ưu tiên tên shop từ file ggmap_search (cột shop_name)
                         shop_name = (row.get('shop_name') or '').strip()
                         if not shop_name:
                             try:
@@ -99,7 +96,6 @@ def get_phonenum_adress(thread_idx, mapsearch):
                             except Exception:
                                 shop_name = ''
 
-                        # Nếu có mapping từ shops/ thì ưu tiên tên đó (so sánh case-insensitive)
                         if shop_name:
                             mapped = shops_map.get(shop_name.lower())
                             if mapped:
@@ -115,7 +111,6 @@ def get_phonenum_adress(thread_idx, mapsearch):
                         except Exception:
                             addresses = []
 
-                        # Lưu kết quả vào file theo category (nếu có trong csv nguồn)
                         category = row.get('category') or Path(csv_file).stem
                         ensure_shop_info_dir()
                         save_shop_info(category, shop_name, phones, addresses)
@@ -126,7 +121,6 @@ def get_phonenum_adress(thread_idx, mapsearch):
 
 
 def ensure_shop_info_dir():
-    """Đảm bảo thư mục shop_info tồn tại"""
     d = Path('shop_info')
     try:
         d.mkdir(parents=True, exist_ok=True)
@@ -135,10 +129,6 @@ def ensure_shop_info_dir():
 
 
 def load_shops_mapping() -> dict:
-    """Tải tất cả CSV trong thư mục `shops/` và trả về mapping từ lower(shop_name) -> shop_name chính thức.
-
-    Sử dụng để ưu tiên tên shop từ `shops/*.csv` khi lưu vào `shop_info`.
-    """
     mapping = {}
     base = Path('shops')
     if not base.exists() or not base.is_dir():
@@ -161,21 +151,14 @@ def load_shops_mapping() -> dict:
 
 
 def save_shop_info(category: str, shop_name: str, phones: list, addresses: list):
-    """Lưu thông tin shop vào file CSV theo category.
-
-    Cột: tên shop, số điện thoại, địa chỉ
-    Nếu một shop có nhiều số hoặc địa chỉ, mỗi dòng sẽ tạo với tất cả kết hợp (cartesian product).
-    """
     safe_category = re.sub(r"[^0-9A-Za-z\-_ ]", '_', category or 'unknown')
     out_file = Path('shop_info') / f"{safe_category}.csv"
-    # Sử dụng header tiếng Anh như yêu cầu
     fieldnames = ['shop_name', 'phone', 'address']
 
     phones = phones or []
     addresses = addresses or []
 
     rows = []
-    # Nếu không có cả phone và address, không lưu gì để tránh hàng rỗng
     if not phones and not addresses:
         return
 
@@ -204,38 +187,27 @@ def save_shop_info(category: str, shop_name: str, phones: list, addresses: list)
 
 
 def extract_aria_values(driver, label_prefix: str) -> list:
-    """Tìm tất cả phần tử có aria-label chứa label_prefix và trả về danh sách giá trị sau prefix.
-
-    Ví dụ aria-label="Số điện thoại: 0123456789" -> trả về ['0123456789']
-    Có thể có nhiều phần tử chứa cùng prefix.
-    """
     results = []
 
     def normalize(s: str) -> str:
-        # Bỏ prefix/tiền tố thừa, trim, collapse spaces và remove trailing punctuation
         try:
             s = str(s)
         except Exception:
             return ''
         s = s.strip()
-        # remove label_prefix if present at start
         if s.startswith(label_prefix):
             s = s[len(label_prefix):].strip()
-        # remove trailing commas/dots
         s = re.sub(r"[,\.\s]+$", '', s)
-        # collapse multiple spaces
         s = re.sub(r"\s+", ' ', s)
         return s
 
     try:
-        # Ưu tiên lấy từ aria-label nếu có
         elements = driver.find_elements('xpath', f"//*[contains(@aria-label, '{label_prefix}')]")
         for el in elements:
             try:
                 al = el.get_attribute('aria-label') or ''
                 if label_prefix in al:
                     val = al.split(label_prefix, 1)[1]
-                    # Nếu là Địa chỉ thì không split theo dấu phẩy; chỉ split theo newline
                     if 'Địa chỉ' in label_prefix:
                         parts = [val]
                     else:
@@ -247,10 +219,8 @@ def extract_aria_values(driver, label_prefix: str) -> list:
             except Exception as e:
                 logger.debug(f"Lỗi khi đọc aria-label: {e}")
 
-        # Không dùng fallback khác; chỉ dựa trên aria-label theo yêu cầu
     except Exception as e:
         logger.debug(f"extract_aria_values lỗi: {e}")
-    # Deduplicate while preserving order
     seen = set()
     dedup = []
     for r in results:
@@ -261,16 +231,13 @@ def extract_aria_values(driver, label_prefix: str) -> list:
 
 
 def safe_get_text_from_ggmap(driver, keys, default=''):
-    """Lấy text an toàn từ page dựa trên list từ khoá (kiểm tra aria-label và text của các element)."""
     try:
         for key in keys:
-            # tìm theo aria-label chứa key
             try:
                 els = driver.find_elements('xpath', f"//*[contains(@aria-label, '{key}')]")
                 for el in els:
                     txt = (el.get_attribute('aria-label') or '').strip()
                     if txt:
-                        # nếu aria-label chứa dạng 'Tên: ...' thì trả phần sau ':'
                         if ':' in txt:
                             return txt.split(':', 1)[1].strip()
                         return txt

@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 def category_chunking(file_path: str | Path | None = None, num_threads: int | None = None):
     try:
         base = Path(__file__).parent
-        # Xác định file CSV: dùng file_path nếu có, hoặc mặc định tới categories/category_hrefs.csv
         if file_path:
             fp = Path(file_path)
         else:
@@ -29,7 +28,6 @@ def category_chunking(file_path: str | Path | None = None, num_threads: int | No
                 reader = csv.reader(f)
                 rows = [r for r in reader]
 
-            # Bỏ header (dòng đầu)
             data_rows = rows[1:]
             categories = [r[0].strip() for r in data_rows if r and r[0].strip()]
         except Exception as e:

@@ -164,13 +164,11 @@ def parse_ggmap_results(page_source: str, max_items: int = 5) -> list[dict]:
         soup = BeautifulSoup(page_source, 'html.parser')
         container = soup.find('div', attrs={'role': 'feed'})
         if not container:
-            # fallback: tìm phần tử có nhiều mục con giống feed
             container = soup.find(lambda tag: tag.name == 'div' and tag.get('aria-label', '').lower().startswith('kết quả'))
 
         if not container:
             return []
 
-        # Thay vì dựa vào class (bị mã hóa), tìm tất cả anchor bên trong container mà href chứa '/maps/place' hoặc '/place/'
         anchors = []
         for a in container.find_all('a', href=True):
             href = a['href']
@@ -184,18 +182,14 @@ def parse_ggmap_results(page_source: str, max_items: int = 5) -> list[dict]:
                 break
 
             href = a['href']
-            # normalize full url if relative
             if href.startswith('/'):
                 href = urllib.parse.urljoin('https://www.google.com', href)
 
-            # lấy tên từ aria-label của anchor nếu có
             name = a.get('aria-label') or a.get_text(strip=True) or ''
 
-            # nếu name rỗng, tìm text gần nhất: div trước/sau
             if not name:
                 parent = a.parent
                 found_name = ''
-                # kiểm tra vài cấp cha để tìm text mô tả
                 for _ in range(4):
                     if not parent:
                         break
@@ -206,7 +200,6 @@ def parse_ggmap_results(page_source: str, max_items: int = 5) -> list[dict]:
                     parent = parent.parent
                 name = found_name
 
-            # tránh trùng href
             if href in seen:
                 continue
             seen.add(href)
@@ -225,7 +218,6 @@ def save_ggmap_results(category: str, query_name: str, results: list[dict]):
         out_dir.mkdir(parents=True, exist_ok=True)
 
         out_file = out_dir / f"{category}.csv"
-        # Ghi header nếu file chưa tồn tại
         write_header = not out_file.exists()
 
         with open(out_file, 'a', newline='', encoding='utf-8') as f:
@@ -234,7 +226,6 @@ def save_ggmap_results(category: str, query_name: str, results: list[dict]):
                 writer.writerow(['shop_name', 'list_href'])
 
             hrefs = [r.get('href', '') for r in results]
-            # nối bằng ; để dễ đọc, tránh JSON để giữ đơn giản
             hrefs_join = ';'.join(hrefs)
             writer.writerow([query_name, hrefs_join])
         logger.info(f"Đã lưu {len(results)} kết quả ggmap cho '{query_name}' vào {out_file}")

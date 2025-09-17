@@ -216,7 +216,6 @@ def save_shops_for_category(category_name: str, shops: list[dict]):
         out_file_json = shops_dir / f"{safe_name}.json"
         out_file_csv = shops_dir / f"{safe_name}.csv"
 
-        # Đọc existing shops: ưu tiên CSV, fallback JSON cũ nếu có
         existing: list[dict] = []
         try:
             import csv
@@ -284,7 +283,6 @@ def save_shops_for_category(category_name: str, shops: list[dict]):
             except Exception:
                 continue
 
-        # Ghi ra CSV với header: shop_id, shop_name, shop_href
         try:
             import csv
             with out_file_csv.open('w', encoding='utf-8-sig', newline='') as f:
@@ -369,11 +367,9 @@ def get_shop_sell_product(thread_idx, products):
         category_name, rows = read_hrefs_from_file(Path(fp))
         logger.info(f"[Thread {thread_idx}] Xử lý category '{category_name}' với {len(rows)} sản phẩm")
 
-        # nếu không có rows thì tiếp
         if not rows:
             continue
 
-        # đường dẫn file CSV để cập nhật trạng thái
         csv_path = Path(fp)
 
         for idx, item in enumerate(rows):
@@ -381,7 +377,6 @@ def get_shop_sell_product(thread_idx, products):
             name = item.get('name') or ''
             status = str(item.get('status') or '0').strip()
 
-            # chỉ xử lý nếu status == '0' (chưa xử lý)
             if status != '0':
                 continue
 
@@ -397,15 +392,12 @@ def get_shop_sell_product(thread_idx, products):
                 shops = get_infor_shop(driver)
                 logger.info(f"[Thread {thread_idx}] Category '{category_name}' - Lấy được {len(shops)} shop từ sản phẩm '{href}'.")
 
-                # nếu phát hiện shop trả về thông báo lỗi tải (cookie hết hạn / session dead)
                 if shops:
-                    # kiểm tra nếu shop name chính xác bằng chuỗi lỗi tải
                     for s in shops:
                         try:
                             shop_name = s.get('shop_name', '') or ''
                             if {shop_name == "Cần trợ giúp?\nLỗi tải\nXin lỗi, chúng tôi đang gặp sự cố tải, bạn vui lòng thử lại nhé.\nThử Lại" or
                                 shop_name == ",\"Bạn cần giúp đỡ?\nTrang không khả dụng\nTài khoản của bạn đã bị giới hạn tạm thời vì tần suất truy cập bất thường và có thể bị khóa vĩnh viễn nếu lặp lại hoạt động này. Vui lòng liên hệ bộ phận CSKH Shopee nếu cần hỗ trợ thêm.\nTrở về trang chủ\nID: 984cc4d41fa-2fc1-4268-9cec-e390712a5407\",https://shopee.vn/"}:
-                                # in nội dung cookies nếu có và dừng process
                                 cookies_file = Path(__file__).parent / 'cookies' / 'cookies.json'
                                 try:
                                     if cookies_file.exists():
@@ -417,7 +409,6 @@ def get_shop_sell_product(thread_idx, products):
                                         logger.error('Phát hiện cookies có vẻ hết hạn nhưng file cookies không tồn tại.')
                                 except Exception as e:
                                     logger.exception(f'Không thể đọc file cookies: {e}')
-                                # dừng toàn bộ chương trình
                                 logger.error('Dừng tiến trình do phát hiện trang báo lỗi tải (cookie/session có vấn đề).')
                                 os._exit(0)
                         except Exception:
@@ -429,10 +420,8 @@ def get_shop_sell_product(thread_idx, products):
                 except Exception as e:
                     logger.exception(f"[Thread {thread_idx}] Lỗi khi lưu shops cho category {category_name}: {e}")
 
-                # sau khi xử lý thành công sản phẩm, cập nhật status = '1' và ghi lại CSV
                 try:
                     rows[idx]['status'] = '1'
-                    # ghi lại toàn bộ file CSV
                     with csv_path.open('w', encoding='utf-8-sig', newline='') as f:
                         fieldnames = ['href', 'name', 'status']
                         writer = csv.DictWriter(f, fieldnames=fieldnames)
