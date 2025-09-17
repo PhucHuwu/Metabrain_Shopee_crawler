@@ -396,8 +396,18 @@ def get_shop_sell_product(thread_idx, products):
                     for s in shops:
                         try:
                             shop_name = s.get('shop_name', '') or ''
-                            if {shop_name == "Cần trợ giúp?\nLỗi tải\nXin lỗi, chúng tôi đang gặp sự cố tải, bạn vui lòng thử lại nhé.\nThử Lại" or
-                                shop_name == ",\"Bạn cần giúp đỡ?\nTrang không khả dụng\nTài khoản của bạn đã bị giới hạn tạm thời vì tần suất truy cập bất thường và có thể bị khóa vĩnh viễn nếu lặp lại hoạt động này. Vui lòng liên hệ bộ phận CSKH Shopee nếu cần hỗ trợ thêm.\nTrở về trang chủ\nID: 984cc4d41fa-2fc1-4268-9cec-e390712a5407\",https://shopee.vn/"}:
+
+                            def is_blocked_or_error_page(text: str) -> bool:
+                                try:
+                                    if not text:
+                                        return False
+                                    low = text.lower()
+                                    keywords = ['cần trợ giúp', 'lỗi tải', 'trang không khả dụng', 'tài khoản của bạn đã bị giới hạn', 'xin lỗi, chúng tôi đang gặp sự cố']
+                                    return any(k in low for k in keywords)
+                                except Exception:
+                                    return False
+
+                            if is_blocked_or_error_page(shop_name):
                                 cookies_file = Path(__file__).parent / 'cookies' / 'cookies.json'
                                 try:
                                     if cookies_file.exists():
